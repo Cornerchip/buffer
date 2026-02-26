@@ -1,0 +1,97 @@
+import os
+import shutil
+import time
+import threading
+from tqdm import tqdm
+
+# 全局暂停标志
+paused = False
+# 用于线程间通信的事件（可选）
+pause_event = threading.Event()
+pause_event.set()  # 初始为运行状态
+
+def check_pause():
+    """检查暂停状态，如果暂停则阻塞"""
+    global paused
+    while paused:
+        time.sleep(0.1)
+
+def toggle_pause():
+    """通过键盘输入切换暂停状态"""
+    global paused
+    input("按 Enter 切换暂停/继续...")
+    paused = not paused
+    print("已暂停" if paused else "已继续")
+    # 递归调用自身，实现连续控制
+    toggle_pause()
+
+def get_total_size(src):
+    """计算源文件夹总大小（字节）"""
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(src):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            total += os.path.getsize(fp)
+    return total
+
+def move_with_progress(src, dst):
+    """
+    移动文件夹并显示进度条，支持暂停。
+    注意：dst 应为目标文件夹路径（不包含源文件夹名），
+    最终目标为 os.path.join(dst, os.path.basename(src))
+    """
+    # 构建最终目标路径
+    dest_root = os.path.join(dst, os.path.basename(src))
+    if not os.path.exists(dest_root):
+        os.makedirs(dest_root)
+
+    # 计算总大小
+    print("正在计算总大小...")
+    total_bytes = get_total_size(src)
+    print(f"总大小: {total_bytes / (1024**3):.2f} GB")
+
+    # 启动键盘监听线程（用于暂停控制）
+    pause_thread = threading.Thread(target=toggle_pause, daemon=True)
+    pause_thread.start()
+
+    # 使用 tqdm 显示进度
+    with tqdm(total=total_bytes, unit='B', unit_scale=True, desc="移动中") as pbar:
+        for dirpath, dirnames, filenames in os.walk(src):
+            # 计算相对路径，用于创建目标子目录
+            rel_path = os.path.relpath(dirpath, src)
+            dest_dir = os.path.join(dest_root, rel_path) if rel_path != '.' else dest_root
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+
+            for filename in filenames:
+                # 暂停检查
+                check_pause()
+
+                src_file = os.path.join(dirpath, filename)
+                dst_file = os.path.join(dest_dir, filename)
+
+                # 判断是否在同一文件系统
+                if os.stat(src_file).st_dev == os.stat(dest_dir).st_dev:
+                    # 同一设备：直接重命名（快速）
+                    os.rename(src_file, dst_file)
+                    # 重命名不改变大小，但为了进度条我们仍要记录大小
+                    file_size = os.path.getsize(dst_file)  # 目标文件已存在
+                else:
+                    # 不同设备：复制后删除（可显示进度）
+                    file_size = os.path.getsize(src_file)
+                    # 复制文件（这里可以用 shutil.copy2 保留元数据）
+                    shutil.copy2(src_file, dst_file)
+                    os.remove(src_file)
+
+                # 更新进度条
+                pbar.update(file_size)
+
+        # 移动完成后删除空源文件夹
+        for dirpath, dirnames, filenames in os.walk(src, topdown=False):
+            if not os.listdir(dirpath):  # 空文件夹
+                os.rmdir(dirpath)
+
+if __name__ == "__main__":
+    source = "/path/to/source_folder"
+    destination = "/path/to/destination_parent"
+    move_with_progress(source, destination)
