@@ -1,0 +1,72 @@
+import os
+import shutil
+import time
+import threading
+from tqdm import tqdm
+
+paused = False
+
+def check_pause():
+    while paused:
+        time.sleep(0.1)
+
+def toggle_pause():
+    """循环监听键盘输入，切换暂停状态"""
+    while True:
+        input("按 Enter 切换暂停/继续...")
+        global paused
+        paused = not paused
+        print("已暂停" if paused else "已继续")
+
+def get_total_size(src):
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(src):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            total += os.path.getsize(fp)
+    return total
+
+def move_with_progress(src, dst):
+    dest_root = os.path.join(dst, os.path.basename(src))
+    if not os.path.exists(dest_root):
+        os.makedirs(dest_root)
+
+    print("正在计算总大小...")
+    total_bytes = get_total_size(src)
+    print(f"总大小: {total_bytes / (1024**3):.2f} GB")
+
+    # 启动键盘监听线程（守护线程，程序退出时会自动结束）
+    pause_thread = threading.Thread(target=toggle_pause, daemon=True)
+    pause_thread.start()
+
+    with tqdm(total=total_bytes, unit='B', unit_scale=True, desc="移动中") as pbar:
+        for dirpath, dirnames, filenames in os.walk(src):
+            rel_path = os.path.relpath(dirpath, src)
+            dest_dir = os.path.join(dest_root, rel_path) if rel_path != '.' else dest_root
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+
+            for filename in filenames:
+                check_pause()   # 暂停检查
+
+                src_file = os.path.join(dirpath, filename)
+                dst_file = os.path.join(dest_dir, filename)
+
+                if os.stat(src_file).st_dev == os.stat(dest_dir).st_dev:
+                    os.rename(src_file, dst_file)
+                    file_size = os.path.getsize(dst_file)
+                else:
+                    file_size = os.path.getsize(src_file)
+                    shutil.copy2(src_file, dst_file)
+                    os.remove(src_file)
+
+                pbar.update(file_size)
+
+        for dirpath, dirnames, filenames in os.walk(src, topdown=False):
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+
+if __name__ == "__main__":
+    source = "/path/to/source_folder"
+    destination = "/path/to/destination_parent"
+    move_with_progress(source, destination)
