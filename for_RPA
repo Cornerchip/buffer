@@ -1,0 +1,2085 @@
+
+
+import csv
+import datetime
+import os
+import re
+import socket
+import time
+import tkinter as tk
+import traceback
+import winsound
+from tkinter import *
+from tkinter import messagebox, ttk,Toplevel
+from Crypto.Cipher import AES
+import base64
+from ctypes import cast, POINTER
+
+computer_name1 = socket.gethostname() #取计算机名
+# computer_name1 = 'S8904' #取计算机名
+computer_name2 = computer_name1 + '.csv'
+log_name3 = os.path.join(r'\\10.8.84.24\BEPE_SYS_DIR\run_check','window_log')
+# lujin = os.path.join(r'D:\donot_delete',computer_name2)
+mc_list=os.listdir(r"\\tcim-sf\SCAN\RECIPE\PGM")
+local_skip_file = os.path.join(r'D:\donot_delete','skip_this_lot.csv')# 本地忽略文件
+local_alert_file = os.path.join(r'D:\donot_delete','alert_message.csv')# 需弹窗信息
+tray_list=['HWA SHU','PEAK','SUNRISE','UBOT','DAEWON','KOSTAT']
+top_application_list=['Top Lead PVI','TopSMI','TOP SPECTRUM','Top BGA2D PVI','Top BGA PVI','Top Lead2D PVI','TOP SPECTRUM PLUS']
+bot_application_list=['Bottom Leadless','BBI','Lead 3D PVI','LL PVI','BGA PVI','BOTTOM SPECTRUM PLUS','3D PVI']
+top_M1P_list = ['Top Lead2D PVI']
+top_HBW_list = ['Top BGA2D PVI']
+top_other_list = ['Top BGA2D PVI','TOP SPECTRUM PLUS']
+bot_M1P_list = ['Lead 3D PVI','LL PVI']
+bot_HBW_list = ['BGA PVI']
+bot_other_list = ['BGA PVI','LL PVI','Lead 3D PVI']
+fail_item12 = ' '
+fail_item23 = ' '
+fail_item_guidao = ' '
+fail_item_add = ' '
+jiange = int('5')
+jishi = int('30') #间隔时长报警用的
+level = 0 #权限等级
+admin_list = []
+the_last_line = 0
+the_last_message = '1'
+server_left = ''
+local_right = ''
+QU_on = 0
+PQ_on = 0
+FOV_x = 56000
+FOV_y = 56000
+
+thisdict =	{}
+EQ_dict =	{}
+list_OK = []
+# log_file = open(r'D:\donot_delete\download_recipe.dat', mode='r', encoding='utf-8')
+log_file = open(r'\\10.8.84.56\scan_temp\CONFIG\runcheck_PW.dat', mode='r', encoding='utf-8')
+log_info=log_file.read().strip()
+row=log_info.split('\n')
+log_file.close()
+for roooow in row:
+    new = roooow.split(';')
+    # print(new)
+    thisdict[new[0]]=new[1]
+    list_OK.append(new[0])
+
+# log_file = open(r'D:\donot_delete\download_recipe.dat', mode='r', encoding='utf-8')
+log_file = open(r'\\10.8.84.56\scan_temp\CONFIG\check_Z_stroke.dat', mode='r', encoding='utf-8')
+log_info=log_file.read().strip()
+row=log_info.split('\n')
+log_file.close()
+for roooow in row:
+    new = roooow.split(';')
+    # print(new)
+    EQ_dict[new[0]]=new[1]
+
+# log_file = open(r'D:\donot_delete\download_recipe.dat', mode='r', encoding='utf-8')
+log_file = open(r'\\10.8.84.56\scan_temp\SOFTWARE\admin.dat', mode='r', encoding='utf-8') #记得改路径到scan-sf-temp
+log_info=log_file.read().strip()
+# log_file.close()
+row=log_info.split('\n')
+log_file.close()
+# print(row)
+for roooow in row:
+    admin_list.append(roooow)
+
+
+#必开项目
+necessary =	{
+  'FCBGA':["S01","S17","S2101","S2102","B0202","B0203"],
+  'FCCSP':["S01","S17","S2101","S2102","B0202","B0203"],
+  'TFBGA':["S01","S17","S2101","S2102","B0202","B0203"],
+  'PBGA':["S01","S17","S2101","S2102","B0202","B0203"],
+  'LGA':["Q07","P03","P13","P1502"],
+  'QFN':["Q07","P03","P13","P1502"],
+  'M1P':["Q07","P13"]
+}
+
+'''
+AES对称加密算法
+'''
+# 需要补位，str不是16的倍数那就补足为16的倍数
+def add_to_16(value):
+    while len(value) % 16 != 0:
+        value += '\0'
+    return str.encode(value)  # 返回bytes
+# 加密方法
+def encrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    encrypt_aes = aes.encrypt(add_to_16(text))  # 先进行aes加密
+    encrypted_text = str(base64.encodebytes(encrypt_aes), encoding='utf-8')  # 执行加密并转码返回bytes
+    return encrypted_text
+# 解密方法
+def decrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    base64_decrypted = base64.decodebytes(text.encode(encoding='utf-8'))  # 优先逆向解密base64成bytes
+    decrypted_text = str(aes.decrypt(base64_decrypted), encoding='utf-8').replace('\0', '')  # 执行解密密并转码返回str
+    return decrypted_text
+
+def get_ord(string):
+    value = ord(string)
+    #在ASCII码表中，大小写的十进制编码相差32
+    if 65 <= value <= 90:
+        value += 32
+    return value
+
+def same_string(str1,str2):
+    if not isinstance(str1,str) or not isinstance(str2,str):
+        return False
+    if len(str1) != len(str2):
+        return False
+    for index,item in enumerate(str1):
+        value1 = get_ord(item)
+        value2 = get_ord(str2[index])
+        
+        if value1 != value2:
+            return False
+    return True
+
+class Nstr:
+    def __init__(self,arg):
+        self.x = arg
+    def __sub__(self,other):
+        c = self.x.replace(other.x,'')
+        return c
+
+'''-------------------------------------------------------------------------------'''
+
+
+def BL(content):  # BL limit
+    BL_list=[]
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set:  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'Marking' in set and 'Information' in set:  # 判断当前所在行是否为Mark项目标注行
+            if len(content) - i >= 400:
+                page = i+400
+                flag = 400
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+400
+            item_name=content[i+2][52:-1]
+            if item_name != 'M1504_Logo' :
+                while i<page:
+                    if 'accept char blob size' in content[i]:
+                        item_bl=str(content[i][55:-1]).strip() #取值
+                        BL_list.append(item_bl)
+                        break
+                    i = i+1
+            i = page - flag
+    return BL_list
+
+
+
+def get_batch_infor():
+    with open(r'C:\icos\batch.txt', "r", encoding="utf-8") as f:
+        batch = f.readlines()
+    Lot_ID_list = batch[5].split(':')
+    recipe_list = batch[8].split(':')
+    return Lot_ID_list,recipe_list
+
+
+def folder_name():
+    
+    path = r'C:\_results\batch'
+    #获取文件夹中所有文件名，以列表形式返回
+    lists = os.listdir(path)
+    print('未经处理的文件夹列表：\n %s \n'%lists)
+    p = time.time()
+    print(time.time())
+
+    #删除txt文件，保留文件夹
+    for folder in lists:
+        if '.txt' in folder or '.TXT' in folder:
+            lists.remove(folder)
+
+    #按照key的关键字进行升序排列，lanbda入参x作为lists列表的元素，获取文件最后的修改日期
+    #最后对lists(文件夹列表)以文件时间从小到大排序
+    lists.sort(key=lambda x:os.path.getctime((path+'\\'+x)))
+
+    #获取最新文件的绝对路径，列表中最后一个值，文件夹+文件名
+
+    file_new = os.path.join(path,lists[-1])
+    print('时间排序后的文件夹列表：\n %s \n'%lists)
+
+    print('最新文件路径：\n%s'%file_new)
+
+    if os.path.exists(os.path.join(file_new,'RVSI')):
+        print(os.path.join(file_new,'RVSI'))
+        return 'wu',file_new
+    elif os.path.exists(os.path.join(file_new,'RVSI.txt')):
+        print(os.path.join(file_new,'RVSI.txt'))
+        return 'wu',file_new
+    elif os.path.exists(os.path.join(file_new,'rvsi.txt')):
+        print(os.path.join(file_new,'rvsi.txt'))
+        return 'wu',file_new
+    elif os.path.exists(os.path.join(file_new,'rvsi.TXT')):
+        print(os.path.join(file_new,'rvsi.TXT'))
+        return 'wu',file_new
+    elif os.path.exists(os.path.join(file_new,'RVSI.TXT')):
+        print(os.path.join(file_new,'RVSI.TXT'))
+        return 'wu',file_new
+    elif os.path.exists(os.path.join(file_new,'Customreport.txt')):
+        print(os.path.join(file_new,'Customreport.txt'))
+        return 'wu',file_new
+    else:
+        print('该批次未作业完成')
+        return 'you',file_new
+
+
+def datfile_creat(fail_item): #生成dat文件配合机况界面
+    '''fail_item : 报警项目'''
+    global computer_name1
+    filename = computer_name1 + '_2.dat'
+    file_name = os.path.join(r'\\10.8.84.24\bepe_sys_dir\GUI',filename)
+    Lot_ID_list,recipe_list = get_batch_infor()
+    # print(Lot_ID_list[1].strip())
+    if os.path.exists(file_name):
+        debug_writer(['欲生成run check dat文件,文件夹内已有,有问题',str(datetime.datetime.now())])
+        with open(file_name,'w',newline='', encoding='utf-8')as file:
+            file.write('Lot_ID=='+Lot_ID_list[1].strip()+'\n')
+            file.write('recipe_name=='+ recipe_list[1].strip() +'\n')
+            file.write('alarm=='+fail_item+'\n')
+            file.write('time=='+str(datetime.datetime.now())+'\n')
+            file.write('cyan')
+    else:
+        with open(file_name,'w',newline='', encoding='utf-8')as file:
+            file.write('Lot_ID=='+Lot_ID_list[1].strip()+'\n')
+            file.write('recipe_name=='+ recipe_list[1].strip() +'\n')
+            file.write('alarm=='+fail_item+'\n')
+            file.write('time=='+str(datetime.datetime.now())+'\n')
+            file.write('cyan')
+
+
+def CMO(content):  # bot_PVI项目名称、area、contrast读取
+    item_qty=0
+    item_list=[]
+    area_list=[]
+    color_list = []
+    contrast_list = []
+    Edge_list = []
+    BG_method_list = []
+    BG_GV_list = []
+    i = -1
+    while i< len(content)-1:
+        i=i+1   # 获取当前行数
+        if i <4:
+            continue
+        if 'Surface' in content[i-4] and 'information' in content[i-4]:  # 判断当前所在行是否为PVI项目标注行
+            # if 'YES' in content[i+2]:
+            if 'Name' in content[i-1]:
+                name_content=content[i-1]
+                item_name=str(name_content[32:-1]).strip()
+                item_list.append(item_name)
+                if 'S01' in item_name: #取chip out内缩值
+                    Edge_list.append(get_edge(i-1,content))
+            elif 'Name' in content[i]:
+                name_content=content[i]
+                item_name=str(name_content[32:-1]).strip()
+                item_list.append(item_name)
+                if 'S01' in item_name: #取chip out内缩值
+                    Edge_list.append(get_edge(i,content))
+            for line in [24,27,28,30,31,32,33]:
+                if 'Background Greyvalue Method' in content[i+line]: #背景GV值取值方式
+                    name_content=content[i+line]
+                    y = name_content.find(':') #确认冒号位置
+                    item_name=str(name_content[y+1:-1]).strip()
+                    BG_method_list.append(item_name)
+                    name_content=content[i+line+1]
+                    y = name_content.find(':') #确认冒号位置
+                    item_name=str(name_content[y+1:-1]).strip()
+                    BG_GV_list.append(item_name)
+        elif 'Criterion' in content[i-2] and 'Name' in content[i] and 'Active' in content[i+1] and 'YES' in content[i+1]:  
+            if len(content) - i >= 60:
+                page = i+60
+                flag = 60
+                new_line =i
+            else:
+                page = len(content)
+                flag = len(content) - i
+                new_line =i
+            area = []
+            color = []
+            contrast =[]
+            while i<page:
+                if 'Name' in content[i] and 'Area' in content[i] and 'Min' in content[i+1]:
+                    new_line =i +7
+                    item_name=str(content[i+1][20:-1]).strip() #取值
+                    area.append(item_name)
+                    if 'Color' in content[i-5] and ':' in content[i-5] :
+                        item_name=str(content[i-5][28:-1]).strip() #取值
+                        color.append(item_name)
+                    elif 'Color' in content[i-11] and ':' in content[i-11] :
+                        item_name=str(content[i-11][28:-1]).strip() #取值
+                        color.append(item_name)
+                    if 'Name' in content[i+6] and 'Contrast' in content[i+6] and 'Min' in content[i+7]:
+                        item_name=str(content[i+7][20:-1]).strip() #取值
+                        contrast.append(item_name)
+                    elif 'Name' in content[i-6] and 'Contrast' in content[i-6] and 'Min' in content[i-5]:
+                        item_name=str(content[i-5][20:-1]).strip() #取值
+                        contrast.append(item_name)
+                    else:
+                        contrast.append('255')
+                i = i+1
+            area_list.append(area)
+            color_list.append(color)
+            contrast_list.append(contrast)
+            i = new_line
+    '''↓删除未启用项目'''
+    for seet in range(4,len(content)-1,1): 
+        for y in range(len(item_list)-1,-1,-1):
+            if item_list[y] in content[seet] and  'NO' in content[seet-2]:
+                item_list.pop(y)
+                area_list.pop(y)
+                color_list.pop(y)
+                contrast_list.pop(y)
+                BG_method_list.pop(y)
+                BG_GV_list.pop(y)
+    '''给B0202的contrast重新取值'''
+    for Num in range(len(item_list)):
+        if item_list[Num][:5] == 'B0202':
+            i = -1
+            while i< len(content)-1:
+                i=i+1   # 获取当前行数
+                if i <4:
+                    continue
+                if 'Surface' in content[i-4] and 'information' in content[i-4]:  # 判断当前所在行是否为PVI项目标注行
+                    # if 'YES' in content[i+2]:
+                    if item_list[Num] in content[i-1] or item_list[Num] in content[i]:
+                        if len(content) - i >= 60:
+                            page = i+60
+                            new_line =i
+                        else:
+                            page = len(content)
+                            new_line =i
+                        while i<page:
+                            if 'Minimum dark contrast' in content[i] and 'Minimum bright contrast' in content[i-1]:
+                                y = content[i].find(':') #确认冒号位置
+                                contrast_list[Num] = [str(content[i][y+1:-1]).strip()] #取值
+                                i = len(content)
+                            i = i+1
+    
+    
+    return item_list,area_list,color_list,contrast_list,Edge_list,BG_method_list,BG_GV_list
+
+
+def creat_log_name(fail_type):  # 创建当下log名称
+    now = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    computer_name1 = socket.gethostname() #取计算机名
+    computer_name2 = computer_name1 +'_'+ now + '_' +fail_type +'.csv'
+    return computer_name2
+
+def debug_writer(message):
+    tt=str(datetime.date.today()) #取当日日期
+    csv_log = 'debug'+tt[2:4]+tt[5:7]+tt[8:10]+'.csv' #log文件名
+    debug_log = os.path.join(r'D:\donot_delete\log',csv_log)
+    with open(debug_log,'a',newline='', encoding='utf-8')as file:
+        writer = csv.writer(file)
+        writer.writerow(message)
+
+def get_add_item():
+    # add_item = open(r'D:\叶智荃\专案\脚本开发\Run check\两次比对\compare_item.dat', mode='r', encoding='utf-8')
+    add_item = open(r'\\10.8.84.56\scan_temp\SOFTWARE\compare_item.dat', mode='r', encoding='utf-8')
+    keyword_doc=add_item.readlines()
+    add_item.close()
+    i = 0
+    while i < len(keyword_doc): #删除回车
+        if '\n' in keyword_doc[i]:
+            # print(keyword_doc[i])
+            keyword_doc[i] = keyword_doc[i][:(len(keyword_doc[i])-1)]
+        i = i+1
+
+    for item in keyword_doc:
+        if 'Background Greyvalue Method Manual' in item:
+            i = item.find('=')
+            manual_BG_method_list =item[i+2:-1].split('/') #背景GV值是manual的item list
+        elif 'Manual Background Greyvalue' in item:
+            i = item.find('=')
+            manual_BG_GV_list = item[i+2:-1].split('/') #背景GV值是manual的GV值设定
+        elif 'BGA ITEM' in item:
+            i = item.find('=')
+            BGA_item_list=item[i+2:-1].split('/') #BGA必开item list
+        elif 'LEAD 2D ITEM' in item:
+            i = item.find('=')
+            Lead_2d_list=item[i+2:-1].split('/') #QFN、LGA必开item list
+        elif 'LEAD 3D ITEM' in item:
+            i = item.find('=')
+            Lead_3d_list=item[i+2:-1].split('/') #CFP必开item list
+            
+    return manual_BG_method_list,manual_BG_GV_list,BGA_item_list,Lead_2d_list,Lead_3d_list
+
+def  get_edge(i,content): #获取内缩值
+    Edge = 0
+    if len(content) - i >= 200:
+        page = i+200
+    else:
+        page = len(content)
+    while i<page:
+        if 'AreaEdge' in content[i] and 'YES' in content[i-1] and 'Active' in content[i-1]:
+            Edge_Offset = str(content[i+2][27:-1]).strip()
+            Window_height = str(content[i+3][27:-1]).strip()
+            Edge = int(float(Edge_Offset)) + int(float(Window_height))
+        i = i+1
+    return Edge
+
+
+def get_handler(path,file_name):
+    pitch_duan,pitch_chang,keshu,nr_of_rows = 0,0,0,0
+    with open(os.path.join(path,file_name), "r", encoding="utf-8") as f:
+        han = f.readlines()
+    for item in han:
+        i = han.index(item)
+        page = i+15
+        if '[X1]' == item[:4]: #pitch获取
+            while i < page:
+                if 'dy' in han[i]:
+                    buff = han[i].split('=')
+                    pitch_duan = buff[1].strip()
+                elif 'dx' in han[i]:
+                    buff = han[i].split('=')
+                    pitch_chang = buff[1].strip()
+                i = i +1
+        if '[IS1]' in item: #检测颗数获取
+            i = han.index(item)
+            if 'nr_in_fov' in han[i+3]:
+                keshu = str(han[i+3][-3:]).strip()
+            elif 'nr_in_fov' in han[i+2]:
+                keshu = str(han[i+2][-3:]).strip()
+        if '[y1]' == item[:4]:
+            while i < page:
+                if 'nr_of_rows_used' in han[i]:
+                    buff = han[i].split('=')
+                    nr_of_rows = buff[1].strip()
+                i = i +1
+
+
+    return pitch_duan,pitch_chang,keshu,nr_of_rows
+
+def get_Z_stroke(path,file_name):
+    with open(os.path.join(path,file_name), "r", encoding="utf-8") as f:
+        content_han = f.readlines()
+    for line_number, line_han in enumerate(content_han, start=1): 
+        if 'component_thickness' in line_han:
+            thickness = re.findall(r'\d+', line_han)
+            int_thickness = [int(item) for item in thickness] ##int_thickness[0]
+        if '[Z_stroke]' in line_han:
+            for i in range(20):
+                if  '[IS1]' in content_han[line_number-i]:
+                    if 'Z_stroke_at_IS' in content_han[line_number] and 'Z_stroke_during_indexing' in content_han[line_number+1]:
+                        Z_stroke1 = re.findall(r'\d+', content_han[line_number])
+                        Z_stroke2 = re.findall(r'\d+', content_han[line_number+1])
+                        int_Z_stroke1 = [int(item) for item in Z_stroke1]
+                        int_Z_stroke2 = [int(item) for item in Z_stroke2]
+
+    return int_thickness,int_Z_stroke1,int_Z_stroke2
+
+def get_body_size(path,file_name):
+    body_size_x,body_size_y = 0,0
+    with open(os.path.join(path,file_name), "r", encoding="utf-8") as f:
+        cmp = f.readlines()
+    for item in cmp:
+        if 'Tip to tip size X' in item:
+            buff = item.split(':')
+            body_size_x = buff[1].strip()
+        elif 'Tip to tip size Y' in item:
+            buff = item.split(':')
+            body_size_y = buff[1].strip()
+    return body_size_x,body_size_y
+
+
+def ICB(content):  # Ignore Contour Blobs 忽略轮廓斑点
+    item_qty=0
+    item_list=[]
+    ignore_list=[]
+    Blobs_Sensitivity = []
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set:  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)
+        elif 'Marking' in set and 'Information' in set:  # 判断当前所在行是否为Mark项目标注行
+            if len(content) - i >= 400:
+                page = i+400
+                flag = 400
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+400
+            item_name=content[i+2][52:-1]
+            item_list.append(item_name)
+            if item_name != 'M1504_Logo' :
+                while i<page:
+                    if 'Ignore Contour Blobs' in content[i] :  # Ignore Contour Blobs 忽略轮廓斑点
+                        item_name=str(content[i][55:-1]).strip()
+                        ignore_list.append(item_name)
+                        Blobs_Sensitivity.append(str(content[i+1][55:-1]).strip())
+                        break
+                    i = i+1
+            i = page - flag
+    return item_list,ignore_list,Blobs_Sensitivity
+
+
+
+def read_cmp(address):
+    recipe_name = 'NO_CMP'
+    for root,dirs,files in os.walk(address):  #ICOS终端替换成cmp路径
+        #root 表示当前正在访问的文件夹路径
+        #dirs 表示该文件夹下的子目录名list
+        #files 表示该文件夹下的文件list
+        #遍历文件
+        for f in files:
+            if same_string(f[-3:],'cmp') and same_string(root,address):
+                if 'LO' in f or 'PAN' in f or 'MO' in f or 'HUA'in f or 'QH' in f:
+                    recipe_name = f[0:-4]
+        #遍历所有的文件夹
+        # for d in dirs:
+        #     print(os.path.join(root,d))
+    
+    return recipe_name
+
+
+def compare_BGA12(canshu,content,PKG): #比对BGA光源参数表与server recipe
+    global fail_item12
+    if PKG in ['LGA','QFN','HBW','M1P']:
+        return 'OK'
+    # print(canshu)
+    PQ_sensitive = PQ_sensitive1(content)
+    PQ_limit = PQ_limit1 (content)
+    QU_factor = QU_factor1(content)
+    QU_limit = QU_limit1(content)
+    print(PQ_sensitive)
+    print(PQ_limit)
+    print(QU_factor)
+    print(QU_limit)
+    # print(PQ_sensitive,PQ_limit[:2],QU_factor,QU_limit[:2])
+    if PQ_sensitive[0] == 'MEDIUM':
+        if PQ_sensitive[1] != canshu[7] :
+            fail_item12 = fail_item12 + 'PQ_sensitive设定异常;'
+        if float(PQ_limit) > float(canshu[8]):
+            fail_item12 = fail_item12 + 'PQ_limit设定大于光源参数表;'
+    elif PQ_sensitive[0] == 'LOW':
+        if PQ_limit == []:
+            pass
+        else:
+            if float(PQ_limit) != float(canshu[8]):
+                fail_item12 = fail_item12 + 'PQ_limit设定不等于于光源参数表;'
+    QU_factor_canshu = canshu[9].split('.')
+    QU_limit_canshu = canshu[10].split('-')
+    if QU_factor[:2] not in QU_factor_canshu:
+        # tanchuan('QU_factor 设定异常')
+        fail_item12 = fail_item12 + 'QU_factor 设定异常;'
+        # return 'ERROR'
+    if QU_limit == []:
+        pass
+    else:
+        if QU_limit_canshu[0] <= QU_limit[:2] <= QU_limit_canshu[1]:
+            pass
+        else: 
+            # tanchuan('QU_limit 设定异常')
+            fail_item12 = fail_item12 + 'QU_limit 设定异常;'
+            # return 'ERROR'
+    return 'OK'
+        
+def compare_BGA23(top_content,local_content): #比对BGAserver recipe 与 local recipe
+    global fail_item23
+    global server_left
+    global local_right
+    top_PQ_sensitive = PQ_sensitive1(top_content)
+    top_PQ_limit = PQ_limit1 (top_content)
+    top_QU_factor = QU_factor1(top_content)
+    top_QU_limit = QU_limit1(top_content)
+    local_PQ_sensitive = PQ_sensitive1(local_content)
+    local_PQ_limit = PQ_limit1 (local_content)
+    local_QU_factor = QU_factor1(local_content)
+    local_QU_limit = QU_limit1(local_content)
+    if top_PQ_sensitive != local_PQ_sensitive:
+        fail_item23 = fail_item23 + 'PQ sensitive server与local档案不一致;'
+        server_left =server_left + 'server PQ sensitive = {};'.format(top_PQ_sensitive)
+        local_right =local_right + 'local PQ sensitive = {};'.format(local_PQ_sensitive)
+    if top_PQ_limit != local_PQ_limit:
+        fail_item23 = fail_item23 + 'PQ limit server与local档案不一致;'
+        server_left =server_left + 'server PQ limit = {};'.format(top_PQ_limit)
+        local_right =local_right + 'local PQ limit = {};'.format(local_PQ_limit)
+    if top_QU_factor != local_QU_factor:
+        fail_item23 = fail_item23 + 'QU factor server与local档案不一致;'
+        server_left =server_left + 'server QU factor = {};'.format(top_QU_factor)
+        local_right =local_right + 'local QU factor = {};'.format(local_QU_factor)
+    if top_QU_limit != local_QU_limit:
+        fail_item23 = fail_item23 + 'QU limit server与local档案不一致;'
+        server_left =server_left + 'server QU limit = {};'.format(top_QU_limit)
+        local_right =local_right + 'local QU limit = {};'.format(local_QU_limit)
+    return 'OK'
+
+
+def compare_topCMO12(canshu,content,PKG): #比对top面光源参数表与server recipe
+    global fail_item12
+    jishu = 0
+    if PKG in ['HBW']:
+        return 'OK'
+    print(canshu)
+    item_list,ignore_list,Blobs_Sensitivity = ICB(content)
+    BL_limit = BL(content)
+    TOP_PVI_limit,x = TOP_PVI_limit1(content)
+    MARK_sensitive = PRINTING(content)
+    print(ignore_list,Blobs_Sensitivity)
+    print(BL_limit)
+    print(TOP_PVI_limit,x)
+    print(MARK_sensitive)
+    for set in content:
+        if 'Pin1 measurement' in set :  # 判断Pin 1 所在行
+            app_name=str(set[24:-1]).strip()  # 读取 YES or NO
+            if app_name != 'YES':
+                fail_item12 = fail_item12 + 'Pin 1 功能未开启;'
+    if x > 0:
+        fail_item12 = fail_item12 + 'TOP PVI limit有'+str(x)+'个项目未卡控area;'
+    for ignore in ignore_list:
+        if ignore == canshu[0][4] or ignore == canshu[1][4]:
+            if MARK_sensitive[(jishu+1)*2-2]==MARK_sensitive[(jishu+1)*2-1] :
+                if int(MARK_sensitive[(jishu+1)*2-1])>= int(canshu[0][3]) or int(MARK_sensitive[(jishu+1)*2-1])>= int(canshu[1][3]):
+                    pass
+                else:
+                    fail_item12 = fail_item12 + 'mark sensitive 异常;'
+            else:
+                fail_item12 = fail_item12 + 'mark sensitive 异常;'
+        elif Blobs_Sensitivity[jishu] >= canshu[0][4] or Blobs_Sensitivity[jishu] >= canshu[1][4]:
+            pass
+        else:
+            fail_item12 = fail_item12 + 'Ignore Contour Blobs 异常;'
+        jishu = jishu+1
+    
+    for BL_li in BL_limit:
+        if float(BL_li ) > float(canshu[0][5]):
+            fail_item12 = fail_item12 + 'BL limit 错误;'
+            # return 'ERROR'
+    for TOP_PVI in TOP_PVI_limit:
+        if int(float(TOP_PVI)) > int(canshu[0][11]):
+            fail_item12 = fail_item12 + 'TOP PVI limit 设定错误;'
+    return 'OK'
+        
+        
+def compare_topCMO23(top_content,local_content): #比对Top面server recipe 与 local recipe
+    global fail_item23
+    global server_left
+    global local_right
+    top_item_list,top_ignore_list,top_Blobs_Sensitivity = ICB(top_content)
+    top_BL_limit = BL(top_content)
+    top_TOP_PVI_limit,top_x = TOP_PVI_limit1(top_content)
+    local_item_list,local_ignore_list,local_Blobs_Sensitivity = ICB(local_content)
+    local_BL_limit = BL(local_content)
+    local_TOP_PVI_limit,local_x = TOP_PVI_limit1(local_content)
+
+    dir_top_server = {
+        'item_name_list':top_item_list,
+        'ignore_list':top_ignore_list,
+        'Blobs_Sensitivity':top_Blobs_Sensitivity,
+        'BL_limit':top_BL_limit,
+        'PVI_limit':top_TOP_PVI_limit
+    } 
+    dir_top_local = {
+        'item_name_list':local_item_list,
+        'ignore_list':local_ignore_list,
+        'Blobs_Sensitivity':local_Blobs_Sensitivity,
+        'BL_limit':local_BL_limit,
+        'PVI_limit':local_TOP_PVI_limit
+    }
+
+    all_items = list(dir_top_server.keys())
+    # all_items =['top_item_list', 'top_ignore_list', 'top_Blobs_Sensitivity', 'top_BL_limit', 'top_PVI_limit']
+    for item in all_items:
+        if 'item_name' in item and len(dir_top_server[item]) != len(dir_top_local[item]):
+            fail_item23 = fail_item23 + '发现server与local档案检测项目数量不一致'
+            server_left =server_left + 'server检测项目 = {}个;'.format(len(dir_top_server[item]))
+            local_right =local_right + 'local检测项目 = {}个;'.format(len(dir_top_local[item]))
+        elif len(dir_top_server[item]) == len(dir_top_local[item]):
+            if 'item_name' not in item: #非命名项目列表
+                for x in range(len(dir_top_server[item])):
+                    #例如：item name list 、 area list
+                    #['S0101_B chip out', 'S1701_B Substrate exposed', 'S2101_B contamination', 'S2102_B foreign material']
+                    #[['25000.000'], ['25000.000'], ['50000.000'], ['50000.000']]
+                    if dir_top_server[item][x] != dir_top_local[item][x] :
+                        fail_item23 += dir_top_local[item][x] +'server与local档案不一致;'
+                        server_left = server_left + '{} = {};'.format(dir_top_server['item_name_list'][x],dir_top_server[item][x])
+                        local_right = local_right + '{} = {};'.format(dir_top_local['item_name_list'][x],dir_top_local[item][x])
+
+    return 'OK'
+
+
+
+def compare_botCMO12(canshu,content,PKG,manual_BG_method_list,manual_BG_GV_list): #比对bottom面光源参数表与server recipe
+    global fail_item12
+    
+    if PKG in ['HBW']:
+        return 'OK'
+    
+    if PKG in ['FCCSP','TFBGA','PBGA','FCBGA']:
+        Edge_limit = 0-int(canshu[19])
+    else:
+        Edge_limit = 0
+    print(canshu)
+    item_list,area_list,color_list,contrast_list,Edge_list,BG_method_list,BG_GV_list = CMO(content)
+    print(item_list)
+    print(area_list)
+    print(color_list)
+    print(contrast_list)
+    if len(item_list) == len(area_list) == len(color_list) == len(contrast_list)== len(BG_method_list)== len(BG_GV_list):
+        pass
+    else:
+        Lot_ID_list,recipe_list = get_batch_infor()
+        recipe_name = recipe_list[1].strip()
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat('item与area等setting不匹配，请反馈叶智荃检查代码')
+        fail_item12 += 'item与area等setting不匹配，请反馈叶智荃检查代码'
+        return 'ERROR'
+    for itemmm in necessary[PKG]:
+        print(itemmm)
+        if len(itemmm) == 3 :
+            new_lits = []
+            for ittem in item_list:
+                new_lits.append(ittem[:3])
+            if itemmm not in new_lits:
+                fail_item12 = fail_item12 + itemmm + '项目未开启;'
+        elif len(itemmm) == 5 :
+            new_lits = []
+            for ittem in item_list:
+                new_lits.append(ittem[:5])
+            if itemmm not in new_lits:
+                fail_item12 = fail_item12 + itemmm + '项目未开启;'
+            print(new_lits)
+    for Edge in Edge_list:
+        if Edge < Edge_limit:
+            fail_item12 = fail_item12 + 'S01 检测区内缩值异常;'
+    for item in item_list:
+        i=item_list.index(item)
+        if item[:3] == 'S01':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'S01 未设area条件;'
+            for area in area_list[i]:
+                if int(float(area)) > int(canshu[12]):
+                    fail_item12 = fail_item12 + 'S01 area setting error;'
+        elif item[:3] == 'S17':
+            S17_limit = canshu[13].split('.')
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'S17 未设area条件;'
+            for color in color_list[i]:
+                if color != S17_limit[0]:
+                    fail_item12 = fail_item12 + 'S17 color setting error;'
+            for area in area_list[i]:
+                if int(float(area)) > int(S17_limit[1]) :
+                    fail_item12 = fail_item12 + 'S17 area setting error;'
+            for contrast in contrast_list[i]:
+                if str(int(float(contrast))) != S17_limit[2]:
+                    fail_item12 = fail_item12 + 'S17 contrast setting error;'
+        elif item[:3] == 'S21':
+            if item[:5] == 'S2101' and PKG in ['PBGA','TFBGA','FCBGA']:
+                if area_list[i] ==[]:
+                    fail_item12 = fail_item12 + 'S2101 未设area条件;'
+                for area in area_list[i]:
+                    if int(float(area)) > int(canshu[14]):
+                        fail_item12 = fail_item12 + 'S2101 area setting error;'
+            if item[:5] == 'S2102' and PKG in ['PBGA','TFBGA','FCBGA']:
+                if area_list[i] ==[]:
+                    fail_item12 = fail_item12 + 'S2102 未设area条件;'
+                for area in area_list[i]:
+                    if int(float(area)) > int(canshu[15]):
+                        fail_item12 = fail_item12 + 'S2102 area setting error;'
+        elif item[:3] == 'Q07':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'Q07 未设area条件;'
+            for area in area_list[i]:
+                if int(float(area)) > int(canshu[16]):
+                    fail_item12 = fail_item12 + 'Q07 area setting error;'
+        elif item[:3] == 'P03':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'P03 未设area条件;'
+            P03_limit = canshu[17].split('.')
+            for color in color_list[i]:
+                if color != P03_limit[0]:
+                    fail_item12 = fail_item12 + 'P03 color setting error;'
+            for area in area_list[i]:
+                if int(float(area)) > int(P03_limit[1]):
+                    fail_item12 = fail_item12 + 'P03 area setting error;'
+            for contrast in contrast_list[i]:
+                if str(int(float(contrast))) != P03_limit[2]:
+                    fail_item12 = fail_item12 + 'P03 contrast setting error;'
+        elif item[:5] == 'P1301':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'P1301 未设area条件;'
+            for area in area_list[i]:
+                if int(float(area)) > int(canshu[18]):
+                    fail_item12 = fail_item12 + 'P1301 area setting error;'
+            
+        elif item[:5] == 'P1302':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'P1302 未设area条件;'
+            P1302_limit = canshu[20].split('.')
+            for color in color_list[i]:
+                if color != P1302_limit[0]:
+                    fail_item12 = fail_item12 + 'P1302 color setting error;'
+            for area in area_list[i]:
+                if int(float(area)) > int(P1302_limit[1]):
+                    fail_item12 = fail_item12 + 'P1302 area setting error;'
+            for contrast in contrast_list[i]:
+                if str(int(float(contrast))) != P1302_limit[2]:
+                    fail_item12 = fail_item12 + 'P1302 contrast setting error;'
+        elif item[:5] == 'B0202':
+            if area_list[i] ==[]:
+                fail_item12 = fail_item12 + 'B0202 未设area条件;'
+            B0202_limit = canshu[21][:-1].split('.')
+            for color in color_list[i]:
+                if color != B0202_limit[0]:
+                    fail_item12 = fail_item12 + 'B0202 color setting error;'
+            for area in area_list[i]:
+                if int(float(area)) > int(B0202_limit[1]):
+                    fail_item12 = fail_item12 + 'B0202 area setting error;'
+            for contrast in contrast_list[i]:
+                if int(float(contrast)) > int(B0202_limit[2]):
+                    fail_item12 = fail_item12 + 'B0202 contrast setting error;'
+        
+        if item[:5] in manual_BG_method_list:
+            # print('背景GV值方法',BG_method_list[i])
+            # print('GV值设定',BG_GV_list[i])
+            if BG_method_list[i] != 'Manual':
+                fail_item12 = fail_item12 + item[:5] +' '+ 'Background Greyvalue Method错误;'
+            else:
+                for Num in range(len(manual_BG_method_list)):
+                    if manual_BG_method_list[Num] == item[:5]:
+                        if int(BG_GV_list[i]) < int(manual_BG_GV_list[Num]):
+                            fail_item12 = fail_item12 + item[:5] +' ' + 'Background Greyvalue Setting错误;'
+    return 'OK'
+
+def compare_botCMO23(bot_content,local_content): #比对Bottom面server recipe 与 local recipe
+    global fail_item23
+    global server_left
+    global local_right
+    bot_item_list,bot_area_list,bot_color_list,bot_contrast_list,bot_Edge_list,bot_BG_method_list,bot_BG_GV_list = CMO(bot_content)
+    local_item_list,local_area_list,local_color_list,local_contrast_list,local_Edge_list,local_BG_method_list,local_BG_GV_list = CMO(local_content)
+    
+    dir_bot_server = {
+        'bot_item_list':bot_item_list,
+        'bot_area_list':bot_area_list,
+        'bot_color_list':bot_color_list,
+        'bot_contrast_list':bot_contrast_list,
+        'bot_Edge_list':bot_Edge_list,
+        'bot_BG_method_list':bot_BG_method_list,
+        'bot_BG_GV_list':bot_BG_GV_list
+    } 
+    dir_bot_local = {
+        'bot_item_list':local_item_list,
+        'bot_area_list':local_area_list,
+        'bot_color_list':local_color_list,
+        'bot_contrast_list':local_contrast_list,
+        'bot_Edge_list':local_Edge_list,
+        'bot_BG_method_list':local_BG_method_list,
+        'bot_BG_GV_list':local_BG_GV_list
+    }
+
+    all_items = list(dir_bot_server.keys())
+    for item in all_items:
+        if 'item_list' in item and len(dir_bot_server[item]) != len(dir_bot_local[item]):
+            fail_item23 = fail_item23 + '发现server与local档案检测项目数量不一致'
+            server_left =server_left + 'server检测项目 = {}个;'.format(len(dir_bot_server[item]))
+            local_right =local_right + 'local检测项目 = {}个;'.format(len(dir_bot_local[item]))
+        elif len(dir_bot_server[item]) == len(dir_bot_local[item]):
+            if 'item_list' not in item: #非命名项目列表
+                if 'Edge_list' in item and dir_bot_server['bot_Edge_list'] != dir_bot_local['bot_Edge_list']:
+                    fail_item23 += 'bot_Edge_list server与local档案不一致;'
+                    server_left =server_left + 'bot_Edge_list = {};'.format(dir_bot_server['bot_Edge_list'])
+                    local_right =local_right + 'bot_Edge_list = {};'.format(dir_bot_local['bot_Edge_list'])
+                else :
+                    for x in range(len(dir_bot_server[item])):
+                        #例如：item name list 、 area list
+                        #['S0101_B chip out', 'S1701_B Substrate exposed', 'S2101_B contamination', 'S2102_B foreign material']
+                        #[['25000.000'], ['25000.000'], ['50000.000'], ['50000.000']]
+                        if dir_bot_server[item][x] != dir_bot_local[item][x] :
+                            fail_item23 += dir_bot_local[item][x] +'server与local档案不一致;'
+                            server_left = server_left + '{} = {};'.format(dir_bot_server['bot_item_list'][x],dir_bot_server[item][x])
+                            local_right = local_right + '{} = {};'.format(dir_bot_local['bot_item_list'][x],dir_bot_local[item][x])
+
+    return 'OK'
+
+def compare_OCR(content,OCR_check):
+    global fail_item23
+    OCR = 'OK'
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set :  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'M1506' in set:
+            if len(content) - i >= 300:
+                page = i+300
+                flag = 300
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+300
+            while i<page:
+                if 'OCR' in content[i] and 'Check' in content[i] and 'ON' in content[i]:
+                    print(i,content[i])
+                    break
+                elif 'OCR' in content[i] and 'Check' in content[i] and 'OFF' in content[i]:
+                    # tanchuan('M1506 或 M1508 OCR未开启')
+                    if len(OCR_check[0][10:].strip()) == 10 and OCR_check[0][10:].strip()[-1:] == 'M':#混客批
+                        print(OCR_check[0][10:].strip())
+                        break
+                    elif len(OCR_check[0][10:].strip()) > 10 and OCR_check[0][10:].strip()[9:10] == 'M':#混客批
+                        print(OCR_check[0][10:].strip())
+                        break
+                    else:
+                        fail_item23 = fail_item23 + 'M1506 OCR未开启;'
+                        OCR = 'ERROR'
+                        return OCR
+                i = i+1
+            i = page - flag
+        elif 'M1509' in set or 'M1508' in set or 'M1501' in set:
+            y = set.find(':')
+            temp_name = set[y+1:-1].strip()
+            if len(content) - i >= 300:
+                page = i+300
+                flag = 300
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+300
+            while i<page:
+                if 'OCR' in content[i] and 'Check' in content[i] and 'ON' in content[i]:
+                    print(i,content[i])
+                    break
+                elif 'OCR' in content[i] and 'Check' in content[i] and 'OFF' in content[i]:
+                    # tanchuan('M1506 或 M1508 OCR未开启')
+                    fail_item23 = fail_item23 + '{} OCR未开启;'.format(temp_name)
+                    OCR = 'ERROR'
+                    return OCR
+                i = i+1
+            i = page - flag
+    return OCR   
+
+
+def PQ_sensitive1(content):  # PQ sensitive
+    PQ_sensitive=[]
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set:  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'Pixel based quality parameters' in set :  
+            if  'Quality Sensitivity' in content[i+3]:
+                item_name=str(content[i+3][26:-1]).strip()
+                PQ_sensitive.append(item_name)
+                item_name=str(content[i+4][26:-1]).strip()
+                PQ_sensitive.append(item_name)   
+    return PQ_sensitive   #第一个是‘LOW’ or 'MEDIUM' ，第二个可能是'relative'
+
+
+def PRINTING(content):  # Overprinting/Underprinting sensitive
+    item_qty=0
+    sensitive_list=[]
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set:  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)
+        elif 'Marking' in set and 'Information' in set:  # 判断当前所在行是否为Mark项目标注行
+            page = i+400
+            item_name=content[i+2][52:-1]
+            if item_name != 'M1504_Logo' :
+                while i<page:
+                    if 'overprinting' in content[i]:
+                        item_name=str(content[i][55:-1]).strip() #取值
+                        sensitive_list.append(item_name)
+                        item_name=str(content[i+1][55:-1]).strip() #取值
+                        sensitive_list.append(item_name)
+                        break
+                    i = i+1
+    return sensitive_list
+
+
+
+def QU_factor1(content):  # QU factor
+    QU_factor=[]
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set:  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'Measurement' in set :  
+            if  'Illum Compensation' in content[i+3]:
+                item_name=str(content[i+3][36:-1]).strip()
+                QU_factor= item_name
+                
+    return QU_factor   #第一个是‘LOW’ or 'MEDIUM' ，第二个可能是'relative'
+
+def QU_limit1(content): #QU limit
+    QU_limit=[]
+    global QU_on
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set :  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'Acceptance criteria' in set and ':' in set and 'Balls' in set:  
+            if len(content) - i >= 30:
+                page = i+30
+                flag = 30
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+30
+            while i<page:
+                if 'QU' in content[i] and 'ON' in content[i]:
+                    item_name=str(content[i][51:59]).strip() #取值
+                    QU_limit=item_name
+                    break
+                elif 'QU' in content[i] and 'OFF' in content[i]:
+                    QU_on += 1
+                    return QU_limit
+                i = i+1
+            i = page - flag
+    if QU_limit==[]:
+        for set in content:
+            i=content.index(set)   # 获取当前行数
+            if 'Acceptance criteria' in set and ':' in set :  
+                page = i+30
+                while i<page:
+                    if 'QU' in content[i] and 'ON' in content[i]:
+                        item_name=str(content[i][51:59]).strip() #取值
+                        QU_limit=item_name
+                        break
+                    elif 'QU' in content[i] and 'OFF' in content[i]:
+                        QU_on += 1
+                        return QU_limit
+                    i = i+1
+                i = page -30
+            
+    return QU_limit   
+
+
+def PQ_limit1(content): #PQ limit
+    PQ_limit=[]
+    global PQ_on
+    for set in content:
+        i=content.index(set)   # 获取当前行数
+        if 'Application Name' in set :  # 判断是否检测功能所在行
+            app_name=set[31:-1]  # 读取检测功能
+            # print('当前文件:', app_name)              
+        elif 'Acceptance criteria' in set and ':' in set and 'Balls' in set:  
+            if len(content) - i >= 50:
+                page = i+50
+                flag = 50
+            else:
+                page = len(content)
+                flag = len(content) - i
+            # page = i+50
+            while i<page:
+                if 'PQ' in content[i] and 'ON' in content[i]:
+                    item_name=str(content[i][43:53]).strip() #取值
+                    PQ_limit=item_name
+                    break
+                elif 'PQ' in content[i] and 'OFF' in content[i]:
+                    PQ_on += 1
+                    return PQ_limit
+                i = i+1
+            i = page - flag
+    if PQ_limit==[]:
+        for set in content:
+            i=content.index(set)   # 获取当前行数
+            if 'Acceptance criteria' in set and ':' in set :  
+                page = i+50
+                while i<page:
+                    if 'PQ' in content[i] and 'ON' in content[i]:
+                        item_name=str(content[i][43:53]).strip() #取值
+                        PQ_limit=item_name
+                        break
+                    elif 'PQ' in content[i] and 'OFF' in content[i]:
+                        PQ_on += 1
+                        return PQ_limit
+                    i = i+1
+        
+                
+    return PQ_limit   #第一个是‘LOW’ or 'MEDIUM' ，第二个可能是'relative'
+
+
+def TOP_PVI_limit1(content): #TOP_PVI limit
+    global fail_item12
+    TOP_PVI_limit=[]
+    
+    x = 0
+    y = 0
+    z = 0
+    for i in range(len(content)):
+        if 'Surface' in content[i] and 'information' in content[i] and 'YES' in content[i+2]:  # 判断当前所在行是否为Mark项目标注行
+            if len(content) - i >= 490:
+                page2 = i+490
+                flag = 490
+            else:
+                page2 = len(content) - 3
+                flag = len(content) - i - 3
+            item_name1=content[i+4][33:-1].strip()
+            if 'Die' in item_name1 or 'die' in item_name1:
+                pass
+            else:
+                x = x+1
+                while i < page2:
+                    if 'Criterion' in content[i] and 'Name' in content[i] and 'YES' in content[i+1]:
+                        page = i +30
+                        while i < page:
+                            if 'Name' in content[i] and 'Area' in content[i] and 'Min' in content[i+1]:
+                                y = y+1
+                                item_name=str(content[i+1][20:-1]).strip() #取值
+                                TOP_PVI_limit.append(item_name)
+                                page = i + 30 
+                                break
+                            i = i+1
+                        i = page -30
+                    elif 'Surface' in content[i+1] and 'information' in content[i+1]:
+                        # print(content[i-6])
+                        i = len(content) #跳出循环
+                    i = i + 1 
+            i = page2 - flag #恢复i原值，防止漏取值
+                        
+    if x > y:
+        z = x - y 
+    elif x < y:
+        fail_item12 = fail_item12 + 'Top面有项目卡控多个area条件;'
+        print('Top面有项目卡控多个area条件')
+                
+    return TOP_PVI_limit,z   #第一个是‘LOW’ or 'MEDIUM' ，第二个可能是'relative'
+
+def skip_alert(): #写入本地skip.csv (文件B)的不报警
+    global fail_item12
+    global fail_item23
+    global fail_item_guidao
+    global server_left
+    global local_right
+    global local_skip_file
+    
+
+    Lot_ID_list,recipe_list = get_batch_infor()
+    Batch_name = Lot_ID_list[1].strip()
+    Lot_lenth = Batch_name.find('-',12)
+    file = open(local_skip_file, mode='r', encoding='gbk')
+    skip_batch=file.read().strip()
+    file.close()
+    skip_list = skip_batch.split('\n')
+
+    for skip_item in skip_list:
+        lllist =skip_item.split(',')
+        if Batch_name[:Lot_lenth] == lllist[0].strip() and 'guidao' == lllist[1].strip():
+            l = Nstr(lllist[2])
+            m = Nstr(fail_item_guidao)
+            fail_item_guidao = m-l
+            print('fail_item_guidao',fail_item_guidao)
+        if Batch_name[:Lot_lenth] == lllist[0].strip() and '12' == lllist[1].strip():
+            l = Nstr(lllist[2])
+            m = Nstr(fail_item12)
+            fail_item12 = m-l
+            print('fail_item12',fail_item12)
+        if Batch_name[:Lot_lenth] == lllist[0].strip() and '23' == lllist[1].strip():
+            l = Nstr(lllist[2])
+            m = Nstr(fail_item23)
+            fail_item23 = m-l
+            print('fail_item23',fail_item23)
+        if Batch_name[:Lot_lenth] == lllist[0].strip() and 'server' == lllist[1].strip():
+            l = Nstr(lllist[2])
+            m = Nstr(server_left)
+            server_left = m-l
+            print('server',server_left)
+        if Batch_name[:Lot_lenth] == lllist[0].strip() and 'local' == lllist[1].strip():
+            l = Nstr(lllist[2])
+            m = Nstr(local_right)
+            local_right = m-l
+            print('local',local_right)
+    
+    
+
+
+
+def alert_message(fail_item,server,local): #需弹窗报警内容(文件A)维护
+    global fail_item12
+    global fail_item23
+    global fail_item_guidao
+    global server_left
+    global local_right
+    global local_alert_file
+    
+    Lot_ID_list,recipe_list = get_batch_infor()
+    if fail_item == fail_item_guidao:
+        with open(local_alert_file,'a',newline='', encoding='utf-8')as file:
+            writer = csv.writer(file)
+            writer.writerow([Lot_ID_list[1].strip(),'guidao',fail_item])
+    if fail_item == fail_item12:
+        with open(local_alert_file,'a',newline='', encoding='utf-8')as file:
+            writer = csv.writer(file)
+            writer.writerow([Lot_ID_list[1].strip(),'12',fail_item])
+    if fail_item == fail_item23:
+        with open(local_alert_file,'a',newline='', encoding='utf-8')as file:
+            writer = csv.writer(file)
+            writer.writerow([Lot_ID_list[1].strip(),'23',fail_item])
+            writer.writerow([Lot_ID_list[1].strip(),'server',server_left])
+            writer.writerow([Lot_ID_list[1].strip(),'local',local_right])
+    pass
+
+'''===================================分割线，下面是多线程主程序=========================================='''
+
+def check_top_name(args):
+    global computer_name1
+    global fail_item12
+    top_canshubiao = []
+    bot_canshubiao = []
+    right_CMOcontent = '1'
+    top_right_canshubiao = []
+    bot_right_canshubiao = []
+    right_BGAcontent = '1'
+    right_content2 = '1'
+    local_BGAcontent = '1'
+    local_CMOcontent = '1'
+    local_content2 = '1'
+    server_path = os.path.join(r'C:\Handler','Models') #预设为本地路径，避免程序异常
+    if computer_name1 == 'S2201' or computer_name1 == 'S3401':
+        equipment = computer_name1
+    else:
+        equipment = 'OTHERS'
+    recipe_name = read_cmp(args)
+    if 'FCB' in recipe_name:
+        PKG = 'FCBGA'
+    elif 'HBW' in recipe_name:
+        PKG = 'HBW'
+    elif 'FCCSP' in recipe_name or 'VFB' in recipe_name:
+        PKG = 'FCCSP'
+    elif 'PB' in recipe_name :
+        PKG = 'PBGA'
+    elif 'FBGA' in recipe_name or 'TFB' in recipe_name:
+        PKG = 'TFBGA'
+    elif 'LGA' in recipe_name:
+        PKG = 'LGA'
+    elif 'MN' in recipe_name or 'QFN' in recipe_name:
+        PKG = 'QFN'
+    elif 'M1P' in recipe_name:
+        PKG = 'M1P'
+    elif 'CFP' in recipe_name:
+        PKG = 'M1P'
+    else:
+        Lot_ID_list,recipe_list = get_batch_infor()
+        recipe_name = recipe_list[1].strip()
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat('PKG分类失败，请反馈叶智荃排查代码')
+        fail_item12 += 'PKG分类失败，请反馈叶智荃排查代码'
+    # docpath=os.path.join(r'D:\叶智荃\专案\脚本开发\Run check\两次比对','光源参数.csv')  # 调试路径
+    docpath=os.path.join(r'\\10.8.84.56\scan_temp\RECIPE','光源参数.csv')  # 记得改成sfnas04的路径
+    f = open(docpath, mode='r', encoding='gbk')
+    keyword_doc=f.readlines()
+    del keyword_doc[0]
+    f.close()
+    local_file_list = os.listdir(args)  #ICOS终端替换成cmp路径
+    print(recipe_name)
+    if PKG == 'M1P':
+        top_application_right_list = top_M1P_list
+    elif PKG == 'HBW':
+        top_application_right_list = top_HBW_list
+    else:
+        top_application_right_list = top_other_list
+    for file in local_file_list:  # 遍历Recipe dir的文件
+        if file[-5:-2]=='CMO':  # 判断是否为PVI参数文件
+            file_path=os.path.join(args,file)
+            recipe=open(file_path, mode='r', encoding='utf-8')
+            content=recipe.readlines()
+            recipe.close()
+            for application in top_application_right_list:
+                if application == content[3][31:-1].strip():
+                    local_CMOcontent = content  #local top CMO内容
+                    for keyword_line in keyword_doc: 
+                        keyword_list=keyword_line.split(',')
+                        if keyword_list[0] ==equipment and keyword_list[1] == application and keyword_list[2] == PKG:
+                            top_canshubiao.append(keyword_list)
+                            
+                    # print(top_canshubiao[0],top_canshubiao[1]) #两份光源参数表，一份是10，一份是20
+                    for root,dirs,files in os.walk(os.path.join(r'\\10.8.84.56\scan\RECIPE\PGM',computer_name1)):  #server recipe check
+                        for f in files:            
+                            if f[-5:-2] == 'CMO' and same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                server_path = root
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                if application in  content2[3]:
+                                    right_CMOcontent = content2  #nas top CMO内容
+                    
+    return PKG,top_canshubiao,right_CMOcontent,local_CMOcontent,server_path
+
+def check_bot_name(args):
+    global computer_name1
+    global fail_item12
+    top_canshubiao = []
+    bot_canshubiao = []
+    right_CMOcontent = '1'
+    top_right_canshubiao = []
+    bot_right_canshubiao = []
+    right_BGAcontent = '1'
+    right_content2 = '1'
+    local_BGAcontent = '1'
+    local_CMOcontent = '1'
+    local_content2 = '1'
+    local_2Dcontent = '1'
+    right_2Dcontent = '1'
+    local_3Dcontent = '1'
+    right_3Dcontent = '1'
+    if computer_name1 == 'S2201' or computer_name1 == 'S3401':
+        equipment = computer_name1
+    else:
+        equipment = 'OTHERS'
+    recipe_name = read_cmp(args)
+    if 'FCB' in recipe_name:
+        PKG = 'FCBGA'
+    elif 'HBW' in recipe_name:
+        PKG = 'HBW'
+    elif 'FCCSP' in recipe_name or 'VFB' in recipe_name:
+        PKG = 'FCCSP'
+    elif 'PB' in recipe_name :
+        PKG = 'PBGA'
+    elif 'FBGA' in recipe_name or 'TFB' in recipe_name:
+        PKG = 'TFBGA'
+    elif 'LGA' in recipe_name:
+        PKG = 'LGA'
+    elif 'MN' in recipe_name or 'QFN' in recipe_name:
+        PKG = 'QFN'
+    elif 'M1P' in recipe_name:
+        PKG = 'M1P'
+    elif 'CFP' in recipe_name:
+        PKG = 'M1P'
+    else:
+        Lot_ID_list,recipe_list = get_batch_infor()
+        recipe_name = recipe_list[1].strip()
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat('PKG分类失败，请反馈叶智荃排查代码')
+        fail_item12 += 'PKG分类失败，请反馈叶智荃排查代码'
+    # docpath=os.path.join(r'D:\叶智荃\专案\脚本开发\Run check\两次比对','光源参数.csv')  # 调试路径
+    docpath=os.path.join(r'\\10.8.84.56\scan_temp\RECIPE','光源参数.csv')  # 记得改成sfnas04的路径
+    f = open(docpath, mode='r', encoding='gbk')
+    keyword_doc=f.readlines()
+    del keyword_doc[0]
+    f.close()
+    local_file_list = os.listdir(args)  #ICOS终端替换成cmp路径
+    print(recipe_name)
+    if PKG == 'M1P':
+        top_application_right_list = top_M1P_list
+        bot_application_right_list = bot_M1P_list
+    elif PKG == 'HBW':
+        top_application_right_list = top_HBW_list
+        bot_application_right_list = bot_HBW_list
+    else:
+        top_application_right_list = top_other_list
+        bot_application_right_list = bot_other_list
+    for file in local_file_list:  # 遍历Recipe dir的文件
+        if file[-5:-2]=='CMO':  # 判断是否为PVI参数文件
+            file_path=os.path.join(args,file) #ICOS终端替换成cmp路径
+            recipe=open(file_path, mode='r', encoding='utf-8')
+            content=recipe.readlines()
+            recipe.close()
+            for application in top_application_right_list:
+                if application == content[3][31:-1].strip():
+                    for keyword_line in keyword_doc: 
+                        keyword_list=keyword_line.split(',')
+                        if keyword_list[0] ==equipment and keyword_list[1] == application and keyword_list[2] == PKG:
+                            top_canshubiao.append(keyword_list)
+                            
+                    # print(top_canshubiao[0],top_canshubiao[1]) #两份光源参数表，一份是10，一份是20
+                    for root,dirs,files in os.walk(os.path.join(r'\\10.8.84.56\scan\RECIPE\PGM',computer_name1)):  #server recipe check
+                        for f in files:
+                            if f[-5:] == 'BGA_1' and  same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                right_BGAcontent = content2  #nas BGA内容
+                                
+                    for root,dirs,files in os.walk(os.path.join(r'\\10.8.84.56\scan\RECIPE\PGM',computer_name1)):  #server recipe check
+                        for f in files:
+                            if f[-3:] == 'LLI' and  same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                right_2Dcontent = content2  #nas Bot_lead内容
+                            elif f[-5:] == 'LLI_1' and  same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                right_2Dcontent = content2  #nas Bot_lead内容
+                            elif f[-3:] == 'LI3' and  same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                right_3Dcontent = content2  #nas Bot_3d_lead内容
+                                
+                    for root,dirs,files in os.walk(args): #这里的args可能为C:\ICOS\CMP也可能是C:\_results\batch\Lot
+                        for f in files:
+                            if f[-5:] == 'BGA_1' and same_string(f[:len(recipe_name)],recipe_name)\
+                                and 'MODEL_LOG' not in root and 'TEMP' not in root:
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                local_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=local_recipe.readlines()
+                                local_recipe.close()
+                                local_BGAcontent = content2  #local BGA内容
+                            if f[-3:] == 'LLI' and same_string(f[:len(recipe_name)],recipe_name)\
+                                and 'MODEL_LOG' not in root and 'TEMP' not in root:
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                local_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=local_recipe.readlines()
+                                local_recipe.close()
+                                local_2Dcontent = content2  #local Bot_lead内容
+                            elif f[-5:] == 'LLI_1' and same_string(f[:len(recipe_name)],recipe_name)\
+                                and 'MODEL_LOG' not in root and 'TEMP' not in root:
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                local_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=local_recipe.readlines()
+                                local_recipe.close()
+                                local_2Dcontent = content2  #local Bot_lead内容
+                            if f[-3:] == 'LI3' and same_string(f[:len(recipe_name)],recipe_name)\
+                                and 'MODEL_LOG' not in root and 'TEMP' not in root:
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                local_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=local_recipe.readlines()
+                                local_recipe.close()
+                                local_3Dcontent = content2  #local Bot_3d_lead内容
+            for application in bot_application_right_list:
+                if application == content[3][31:-1].strip():
+                    local_content2 = content  #local bot CMO内容
+                    for keyword_line in keyword_doc: 
+                        keyword_list=keyword_line.split(',')
+                        # print(equipment,application,PKG,keyword_list)
+                        if keyword_list[0] ==equipment and keyword_list[1] == application and keyword_list[2] == PKG:
+                            bot_canshubiao.append(keyword_list)
+                              #bottom面光源参数表，不用管mark的参数，后面对就行
+                    for root,dirs,files in os.walk(os.path.join(r'\\10.8.84.56\scan\RECIPE\PGM',computer_name1)):  #server recipe check
+                        for f in files:            
+                            if f[-5:-2] == 'CMO' and same_string(f[:len(recipe_name)],recipe_name) and same_string(root[-len(recipe_name):],recipe_name):
+                                nas_path = os.path.join(root,f)
+                                # print(nas_path) #CMO路径
+                                nas_recipe=open(nas_path, mode='r', encoding='utf-8')
+                                content2=nas_recipe.readlines()
+                                nas_recipe.close()
+                                if application in  content2[3]:
+                                    right_content2 = content2  #nas bot CMO内容
+                    
+    # print(PKG,bot_canshubiao,right_BGAcontent,right_content2,local_BGAcontent,local_content2)
+    return PKG,bot_canshubiao,right_BGAcontent,right_content2,local_BGAcontent,local_content2,right_2Dcontent,local_2Dcontent,right_3Dcontent,local_3Dcontent
+
+
+def check_BGA12(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    if PKG in ['LGA','QFN','M1P'] :
+        return OJBK
+    bot_right_canshubiao = []
+    #下面要比对参数表与server recipe差异
+    PQ_sensitive = PQ_sensitive1(ser_bga)
+    print(bot_canshubiao)
+    print(PQ_sensitive)
+    for canshu in bot_canshubiao:
+        if canshu[6] == PQ_sensitive[0]:
+            bot_right_canshubiao = canshu
+            break
+    if bot_right_canshubiao ==[]:
+        # tanchuan('PQ_sensitive异常')
+        fail_item12 = fail_item12 + 'PQ_sensitive异常;'
+        OJBK = 'ERROR'
+        return OJBK
+    
+    OJBK = compare_BGA12(bot_right_canshubiao,ser_bga,PKG)
+    
+    return OJBK
+        
+
+def check_BGA23(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    if PKG in ['LGA','QFN','M1P'] :
+        return OJBK
+    bot_right_canshubiao = []
+    #下面要比对参数表与server recipe差异
+    PQ_sensitive = PQ_sensitive1(ser_bga)
+    # print(MARK_sensitive)
+    
+    for canshu in bot_canshubiao:
+        if canshu[6] == PQ_sensitive[0]:
+            bot_right_canshubiao = canshu
+            break
+    if bot_right_canshubiao ==[]:
+        fail_item12 = fail_item12 + 'PQ_sensitive异常;'
+        OJBK = 'ERROR'
+        return OJBK
+    OJBK = compare_BGA23(ser_bga,local_bga)
+    
+    return OJBK
+
+def check_Lead12(PKG,BGA_item_list,Lead_2d_list,Lead_3d_list,ser_bga,local_bga,server_lead,local_lead,ser_3D,local_3D):
+    '''PKG,dat文件里BGA项目,dat文件里Lead_2d项目,dat文件里Lead_3d项目,如命名的package data'''
+    global fail_item12
+    global fail_item23
+    global server_left
+    global local_right
+    global level
+    need_List=[]  #server lead list
+    number_list = []  #server lead number list
+    need_List2=[]  #local lead list
+    number_list2 = []  #local lead number list
+    # bot_right_canshubiao = []
+    if PKG in ['LGA','QFN'] :
+        if server_lead != '1':
+            for set in server_lead:
+                i=server_lead.index(set)   # 获取当前行数
+                if 'Acceptance Criteria' in set and ':' in set:
+                    page = len(server_lead)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in server_lead[i]:
+                            item_name=str(server_lead[i][0:5]).strip() #取值开启ITEM
+                            need_List.append(item_name)
+                            item_name=str(server_lead[i][12:]).strip() #数值
+                            number_list.append(item_name)
+                        i = i+1
+                    i = new_line
+            for set in local_lead:
+                i=local_lead.index(set)   # 获取当前行数
+                if 'Acceptance Criteria' in set and ':' in set:
+                    page = len(local_lead)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in local_lead[i]:
+                            item_name=str(local_lead[i][0:5]).strip() #取值开启ITEM
+                            need_List2.append(item_name)
+                            item_name=str(local_lead[i][12:]).strip() #数值
+                            number_list2.append(item_name)
+                        i = i+1
+                    i = new_line
+                elif 'Acceptance criteria' in set and ':' in set:
+                    page = len(local_lead)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in local_lead[i]:
+                            item_name=str(local_lead[i][0:5]).strip() #取值开启ITEM
+                            need_List2.append(item_name)
+                            item_name=str(local_lead[i][12:]).strip() #数值
+                            number_list2.append(item_name)
+                        i = i+1
+                    i = new_line
+            print(need_List)
+            print(number_list)
+            print(need_List2)
+            print(number_list2)
+            for Lead_2d in Lead_2d_list:
+                if Lead_2d not in need_List:
+                    fail_item12 = fail_item12 + Lead_2d +'未开启;'
+            if level != 9:
+                if need_List2 != need_List:
+                    fail_item23 = fail_item23 +'本地Lead开启项目与server不符;'
+                    server_left += 'server Lead开启项目 = {};'.format(str(need_List))
+                    local_right += '本地Lead开启项目 = {};'.format(str(need_List2))
+                elif number_list2 != number_list:
+                    fail_item23 = fail_item23 +'本地Lead项目设定与server不符;'
+                    server_left += 'server Lead项目设定 = {};'.format(str(number_list))
+                    local_right += '本地Lead项目设定 = {};'.format(str(number_list2))
+        elif server_lead == '1':
+            for set in ser_bga:
+                i=ser_bga.index(set)   # 获取当前行数
+                if 'Acceptance criteria' in set and 'Balls' in set and ':' in set:
+                    page = len(ser_bga)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in ser_bga[i]:
+                            item_name=str(ser_bga[i][0:5]).strip() #取值开启ITEM
+                            need_List.append(item_name)
+                            item_name=str(ser_bga[i][12:]).strip() #数值
+                            number_list.append(item_name)
+                        i = i+1
+                    i = new_line
+                elif 'Acceptance criteria' in set and ':' in set and 'ON' in ser_bga[i+4]:
+                    page = len(ser_bga)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in ser_bga[i]:
+                            item_name=str(ser_bga[i][0:5]).strip() #取值开启ITEM
+                            need_List.append(item_name)
+                            item_name=str(ser_bga[i][12:]).strip() #数值
+                            number_list.append(item_name)
+                        i = i+1
+                    i = new_line
+            for set in local_bga:
+                i=local_bga.index(set)   # 获取当前行数
+                if 'Acceptance criteria' in set and 'Balls' in set and ':' in set:
+                    page = len(local_bga)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in local_bga[i]:
+                            item_name=str(local_bga[i][0:5]).strip() #取值开启ITEM
+                            need_List2.append(item_name)
+                            item_name=str(local_bga[i][12:]).strip() #数值
+                            number_list2.append(item_name)
+                        i = i+1
+                    i = new_line
+                elif 'Acceptance criteria' in set and ':' in set and 'ON' in local_bga[i+4]:
+                    page = len(local_bga)
+                    new_line =i
+                    while i<page:
+                        if 'ON' in local_bga[i]:
+                            item_name=str(local_bga[i][0:5]).strip() #取值开启ITEM
+                            need_List2.append(item_name)
+                            item_name=str(local_bga[i][12:]).strip() #数值
+                            number_list2.append(item_name)
+                        i = i+1
+                    i = new_line
+                
+            print(need_List)
+            print(number_list)
+            print(need_List2)
+            print(number_list2)
+            for BBGA in Lead_2d_list:
+                if BBGA not in need_List:
+                    fail_item12 = fail_item12 + BBGA +'未开启;'
+            if level != 9:
+                if need_List2 != need_List:
+                    fail_item23 = fail_item23 +'本地Lead开启项目与server不符;'
+                    server_left += 'server Lead开启项目 = {};'.format(str(need_List))
+                    local_right += '本地Lead开启项目 = {};'.format(str(need_List2))
+                elif number_list2 != number_list:
+                    fail_item23 = fail_item23 +'本地Lead项目设定与server不符;'
+                    server_left += 'server Lead项目设定 = {};'.format(str(number_list))
+                    local_right += '本地Lead项目设定 = {};'.format(str(number_list2))
+    
+    elif PKG in ['FCBGA','FCCSP','TFBGA','PBGA']:
+        for set in ser_bga:
+            i=ser_bga.index(set)   # 获取当前行数
+            if 'Acceptance criteria' in set and 'Balls' in set and ':' in set:
+                page = len(ser_bga)
+                new_line =i
+                while i<page:
+                    if 'ON' in ser_bga[i]:
+                        item_name=str(ser_bga[i][0:5]).strip() #取值开启ITEM
+                        need_List.append(item_name)
+                        item_name=str(ser_bga[i][12:]).strip() #数值
+                        number_list.append(item_name)
+                    i = i+1
+                i = new_line
+            elif 'Acceptance criteria' in set and ':' in set and 'ON' in ser_bga[i+3]:
+                page = len(ser_bga)
+                new_line =i
+                while i<page:
+                    if 'ON' in ser_bga[i]:
+                        item_name=str(ser_bga[i][0:5]).strip() #取值开启ITEM
+                        need_List.append(item_name)
+                        item_name=str(ser_bga[i][12:]).strip() #数值
+                        number_list.append(item_name)
+                    i = i+1
+                i = new_line
+        for set in local_bga:
+            i=local_bga.index(set)   # 获取当前行数
+            if 'Acceptance criteria' in set and 'Balls' in set and ':' in set:
+                page = len(local_bga)
+                new_line =i
+                while i<page:
+                    if 'ON' in local_bga[i]:
+                        item_name=str(local_bga[i][0:5]).strip() #取值开启ITEM
+                        need_List2.append(item_name)
+                        item_name=str(local_bga[i][12:]).strip() #数值
+                        number_list2.append(item_name)
+                    i = i+1
+                i = new_line
+            elif 'Acceptance criteria' in set and ':' in set and 'ON' in local_bga[i+3]:
+                page = len(local_bga)
+                new_line =i
+                while i<page:
+                    if 'ON' in local_bga[i]:
+                        item_name=str(local_bga[i][0:5]).strip() #取值开启ITEM
+                        need_List2.append(item_name)
+                        item_name=str(local_bga[i][12:]).strip() #数值
+                        number_list2.append(item_name)
+                    i = i+1
+                i = new_line
+            
+        print(need_List)
+        print(number_list)
+        print(need_List2)
+        print(number_list2)
+        for BBGA in BGA_item_list:
+            if BBGA not in need_List:
+                fail_item12 = fail_item12 + BBGA +'未开启;'
+                # server_left += 'server Ball开启项目 = {};'.format(str(number_list))
+                # local_right += '本地Ball开启项目 = {};'.format(str(number_list2))
+        if level != 9:
+            if need_List2 != need_List:
+                fail_item23 = fail_item23 +'本地Ball开启项目与server不符;'
+                server_left += 'server Ball开启项目 = {};'.format(str(need_List))
+                local_right += '本地Ball开启项目 = {};'.format(str(need_List2))
+            elif number_list2 != number_list:
+                fail_item23 = fail_item23 +'本地Ball项目设定与server不符;'
+                server_left += 'server Ball项目设定 = {};'.format(str(number_list))
+                local_right += '本地Ball项目设定 = {};'.format(str(number_list2))
+    
+    elif PKG in ['M1P'] :
+        for set in ser_3D:
+            i=ser_3D.index(set)   # 获取当前行数
+            if 'Acceptance Criteria' in set and ':' in set:
+                page = len(ser_3D)
+                new_line =i
+                while i<page:
+                    if 'ON' in ser_3D[i]:
+                        item_name=str(ser_3D[i][0:5]).strip() #取值开启ITEM
+                        need_List.append(item_name)
+                        item_name=str(ser_3D[i][7:]).strip() #数值
+                        number_list.append(item_name)
+                    i = i+1
+                i = new_line
+        for set in local_3D:
+            i=local_3D.index(set)   # 获取当前行数
+            if 'Acceptance Criteria' in set and ':' in set:
+                page = len(local_3D)
+                new_line =i
+                while i<page:
+                    if 'ON' in local_3D[i]:
+                        item_name=str(local_3D[i][0:5]).strip() #取值开启ITEM
+                        need_List2.append(item_name)
+                        item_name=str(local_3D[i][7:]).strip() #数值
+                        number_list2.append(item_name)
+                    i = i+1
+                i = new_line
+        print(need_List)
+        print(number_list)
+        print(need_List2)
+        print(number_list2)
+        for BBGA in Lead_3d_list:
+            if BBGA not in need_List:
+                fail_item12 = fail_item12 + BBGA +'未开启;'
+        if level != 9:
+            if need_List2 != need_List:
+                fail_item23 = fail_item23 +'本地Lead 3D开启项目与server不符;'
+                server_left += 'server Lead 3D开启项目 = {};'.format(str(need_List))
+                local_right += '本地Lead 3D开启项目 = {};'.format(str(need_List2))
+                print('本地Lead 3D开启项目与server不符;')
+            elif number_list2 != number_list:
+                fail_item23 = fail_item23 +'本地Lead 3D项目设定与server不符;'
+                server_left += 'server Lead 3D项目设定 = {};'.format(str(number_list))
+                local_right += '本地Lead 3D项目设定 = {};'.format(str(number_list2))
+                print('本地Lead 3D项目设定与server不符;')
+
+
+def check_botCMO12(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot,manual_BG_method_list,manual_BG_GV_list):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    #下面要比对参数表与server recipe差异
+    PQ_sensitive = PQ_sensitive1(ser_bga)
+    # print(MARK_sensitive)
+    print(PQ_sensitive)
+    if PKG in ['LGA','QFN','M1P']:
+        PQ_sensitive = ['LOW']
+    bot_right_canshubiao = []
+    for canshu in bot_canshubiao:
+        if canshu[6] == PQ_sensitive[0]:
+            bot_right_canshubiao = canshu
+            break
+    # print(top_right_canshubiao)
+    # print(bot_right_canshubiao)
+    if bot_right_canshubiao ==[]:
+        # tanchuan('PQ_sensitive异常')
+        fail_item12 = fail_item12 + 'PQ_sensitive异常;'
+        OJBK = 'ERROR'
+        return OJBK
+    # duoxiancheng(top_right_canshubiao,bot_right_canshubiao,ser_bga,ser_top,ser_bot,local_bga,local_top,local_bot,PKG)
+    
+    
+    OJBK = compare_botCMO12(bot_right_canshubiao,ser_bot,PKG,manual_BG_method_list,manual_BG_GV_list)
+    
+    
+    return OJBK
+
+def check_botCMO23(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    #下面要比对参数表与server recipe差异
+    PQ_sensitive = PQ_sensitive1(ser_bga)
+    if PKG in ['LGA','QFN','M1P']:
+        PQ_sensitive = ['LOW']
+    # print(MARK_sensitive)
+    bot_right_canshubiao = []
+    for canshu in bot_canshubiao:
+        if canshu[6] == PQ_sensitive[0]:
+            bot_right_canshubiao = canshu
+            break
+    # print(top_right_canshubiao)
+    # print(bot_right_canshubiao)
+    if bot_right_canshubiao ==[]:
+        # tanchuan('PQ_sensitive异常')
+        fail_item12 = fail_item12 + 'PQ_sensitive异常;'
+        OJBK = 'ERROR'
+        return OJBK
+    # duoxiancheng(top_right_canshubiao,bot_right_canshubiao,ser_bga,ser_top,ser_bot,local_bga,local_top,local_bot,PKG)
+    
+    
+    OJBK = compare_botCMO23(ser_bot,local_bot)
+    
+    
+    return OJBK
+
+def check_topCMO12(PKG,top_canshubiao,ser_top,local_top):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    #下面要比对参数表与server recipe差异
+    OJBK = compare_topCMO12(top_canshubiao,ser_top,PKG)
+    return OJBK
+
+def check_topCMO23(PKG,top_canshubiao,ser_top,local_top):
+    global fail_item12
+    jieguo = []
+    OJBK = 'OK'
+    #下面要比对参数表与server recipe差异
+    MARK_sensitive = PRINTING(ser_top)
+    
+    OJBK = compare_topCMO23(ser_top,local_top)
+    if PKG == 'HBW':
+        l = Nstr('Top面有项目卡控多个area条件;')
+        m = Nstr(fail_item12)
+        fail_item12 = m-l
+    return OJBK
+
+
+def check_OCR(PKG,ser_top,local_top):
+    jieguo = []
+    OJBK = 'OK'
+    time.sleep(1)
+    ocrfile = open(r'C:\icos\MARK_TARGET.txt', mode='r', encoding='utf-8') #记得换成C:\ICOS
+    need=ocrfile.readlines()
+    ocrfile.close()
+    # if len(need[0][10:-1]) ==10:
+    #     OJBK = 'OK'
+    # else:
+    OJBK = compare_OCR(local_top,need)
+    return OJBK
+
+def check_nr_in_fov(nas_path,recipe):
+    global FOV_x
+    global FOV_y
+    global computer_name1
+    global fail_item12
+    handler_file = recipe + '.han'
+    cmp_file = recipe + '.cmp'
+    pitch_duan,pitch_chang,bot_number,nr_of_rows = get_handler(nas_path,handler_file) #获取tray pitch & bottom检测颗数 & 行数
+    body_size_x,body_size_y = get_body_size(nas_path,cmp_file) #获取body size
+    int_thickness,int_Z_stroke1,int_Z_stroke2 = get_Z_stroke(nas_path,handler_file) #获取Z_stroke信息，用来判断轨道
+    
+    if pitch_duan == 0 or pitch_chang == 0 or bot_number == 0 or nr_of_rows == 0 or body_size_x == 0 or body_size_y == 0:
+        fail_item12 = fail_item12 + '检测颗数取值异常，请反馈叶智荃检查代码；'
+        return int_thickness,int_Z_stroke1,int_Z_stroke2,body_size_x,body_size_y
+    keshu_col = int(bot_number) / int(nr_of_rows) #X方向吸料颗数
+
+    if computer_name1 =='S8903':
+        Nozzle_col_min = 8000 #X方向
+        Nozzle_row_min = 9000 #Y方向
+    else:
+        Nozzle_col_min = 14000
+        Nozzle_row_min = 14000
+
+    if Nozzle_col_min <= int(pitch_duan): # X方向无需间隔吸料
+        actual_x_add = int(keshu_col) * int(pitch_duan) + float(body_size_x) # X方向多吸一颗料时X方向总长
+        if actual_x_add < FOV_x :
+            fail_item12 = fail_item12 + '背面X方向检测颗数设定异常;'
+    
+    elif Nozzle_col_min > int(pitch_duan): # X方向需间隔吸料
+        actual_x_add = 2 * int(keshu_col) * int(pitch_duan) + float(body_size_x) # X方向多吸一颗料时X方向总长
+        if actual_x_add < FOV_x :
+            fail_item12 = fail_item12 + '背面X方向检测颗数设定异常;'
+
+    if Nozzle_row_min <= int(pitch_chang): # Y方向无需间隔吸料
+        if nr_of_rows == '1':
+            actual_y_add = int(pitch_chang) + float(body_size_y) # Y方向多吸一颗料时Y方向总长
+            if actual_y_add < FOV_y:
+                fail_item12 = fail_item12 + '背面Y方向检测颗数设定异常;'
+    elif Nozzle_row_min > int(pitch_chang): # Y方向需间隔吸料
+        if nr_of_rows == '1':
+            actual_y_add = 2 * int(pitch_chang) + float(body_size_y) # Y方向多吸一颗料时Y方向总长
+            if actual_y_add < FOV_y:
+                fail_item12 = fail_item12 + '背面Y方向检测颗数设定异常;'
+    return int_thickness,int_Z_stroke1,int_Z_stroke2,body_size_x,body_size_y
+
+def check_ABC(int_thickness,int_Z_stroke1,int_Z_stroke2,int_size_X,int_size_Y):
+    global computer_name1
+    global fail_item_guidao
+    if int_thickness[0] >= 3400 or float(int_size_X) >= 33000 or float(int_size_Y) >= 33000 :
+        if int_Z_stroke1[0] == 1 and int_Z_stroke2[0] == 1 :
+            pass
+        elif int_Z_stroke1[0] == 1 and int_Z_stroke2[0] == 0 :
+            fail_item_guidao = fail_item_guidao + '当前轨道设定为B，应为A，请call HW;'
+        elif int_Z_stroke1[0] == 0 and int_Z_stroke2[0] == 0 :
+            fail_item_guidao = fail_item_guidao + '当前轨道设定为C，应为A，请call HW;'
+    else:
+        if int_Z_stroke1[0] == 1 and int_Z_stroke2[0] == 1 :
+            fail_item_guidao = fail_item_guidao + '当前轨道设定为A，应为B or C，请call HW;'
+        elif int_Z_stroke1[0] == 1 and int_Z_stroke2[0] == 0 :
+            pass
+        elif int_Z_stroke1[0] == 0 and int_Z_stroke2[0] == 0 :
+            pass
+    
+
+def send_mail(alarm):
+    if not os.path.exists(r'\\Nas-temp-sf\sftest\BEPE\TRAY TO TRAY\code_test\alarm_mail'):
+        os.makedirs(r'\\Nas-temp-sf\sftest\BEPE\TRAY TO TRAY\code_test\alarm_mail')
+    if os.path.exists(r'\\Nas-temp-sf\sftest\BEPE\TRAY TO TRAY\code_test\alarm_mail'):
+        # log_name = creat_log_name('haha')
+        now = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        computer_name1 = socket.gethostname() #取计算机名
+        log_name = computer_name1 +'_'+ now + '.txt'
+        alarm_log = os.path.join(r'\\Nas-temp-sf\sftest\BEPE\TRAY TO TRAY\code_test\alarm_mail',log_name)
+        with open(alarm_log,'w',newline='', encoding='utf-8')as file:
+            file.write('检测颗数报警'+'\n')
+            file.write('报警机台：'+computer_name1+'\n')
+            file.write('报警内容：'+alarm[1:]+'\n')
+            file.write('报警时间：'+datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')+'\n')
+
+
+def verify_server_local():
+    global fail_item12
+    global fail_item23
+    global fail_item_add
+    global fail_item_guidao
+    global log_name3
+    global computer_name1
+    global server_left
+    global local_right
+    global QU_on
+    global PQ_on
+    ttoday=str(datetime.date.today()) #取当日日期
+    # while i < 10 :
+    tt=str(datetime.date.today()) #取当日日期
+    if tt!= ttoday:
+        i = 20 #如果第二天消除弹窗，跳出循环
+    csv_log = 'debug'+tt[2:4]+tt[5:7]+tt[8:10]+'.csv' #log文件名
+    debug_log = os.path.join(r'D:\donot_delete\log',csv_log)
+    you,address = folder_name()
+    local_path = os.path.join(r'C:\icos\Current','Cmp')
+    recipe_name = read_cmp(os.path.join(r'C:\icos','Cmp'))
+    if recipe_name != 'NO_CMP' and you == 'you':
+        PKG,top_canshubiao,ser_top,local_top,nas_path = check_top_name(local_path)
+        PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot,server_lead,local_lead,ser_3D,local_3D = check_bot_name(local_path)
+        manual_BG_method_list,manual_BG_GV_list,BGA_item_list,Lead_2d_list,Lead_3d_list = get_add_item()
+        if top_canshubiao == [] :
+            fail_item12 = fail_item12 + 'top参数表取值异常，联系叶智荃检查代码;'
+        elif bot_canshubiao ==[] :
+            fail_item12 = fail_item12 + 'bot参数表取值异常，联系叶智荃检查代码;'
+        # print(PKG,top_canshubiao,ser_top,local_top)        
+        check_BGA12(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot)
+        check_BGA23(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot)
+        check_Lead12(PKG,BGA_item_list,Lead_2d_list,Lead_3d_list,ser_bga,local_bga,server_lead,local_lead,ser_3D,local_3D)
+        check_botCMO12(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot,manual_BG_method_list,manual_BG_GV_list)
+        check_botCMO23(PKG,bot_canshubiao,ser_bga,ser_bot,local_bga,local_bot)
+        print('====================上面是bottom面的========================')
+        check_topCMO12(PKG,top_canshubiao,ser_top,local_top)
+        check_topCMO23(PKG,top_canshubiao,ser_top,local_top)
+        print('====================上面是top面的========================')
+        int_thickness,int_Z_stroke1,int_Z_stroke2,body_size_x,body_size_y = check_nr_in_fov(nas_path,recipe_name)
+        print('====================上面是检测颗数判断========================')
+        check_ABC(int_thickness,int_Z_stroke1,int_Z_stroke2,body_size_x,body_size_y)
+        print('====================上面是轨迹判断========================')
+        check_OCR(PKG,ser_top,local_top)
+    
+    
+    if QU_on > 0:
+        fail_item12 = fail_item12 + 'QU检测未开启;'
+    if PQ_on > 0:
+        fail_item12 = fail_item12 + 'PQ检测未开启;'
+    
+    if len(fail_item12) > 1 : #依server skip文件忽略报警
+        skipfile=os.path.join(r'\\10.8.84.56\scan_temp\SOFTWARE','skip.csv')  # skip 项目
+        # skipfile=os.path.join(r'C:\Users\zhiquan.ye\Desktop\临时','skip.csv')  # skip 项目
+        file = open(skipfile, mode='r', encoding='gbk')
+        skip_recipe=file.read().strip()
+        file.close()
+        skip_list = skip_recipe.split('\n')
+        for skip_item in skip_list:
+            lllist =skip_item.split(',')
+            if recipe_name == lllist[1].strip() and computer_name1 == lllist[0].strip():
+                x = 2
+                while x < len(lllist) :
+                    l = Nstr(lllist[x])
+                    m = Nstr(fail_item12)
+                    fail_item12 = m-l
+                    print('fail_item12',fail_item12)
+                    x=x+1
+    if len(fail_item_guidao) > 1 : #依server skip文件忽略报警
+        skipfile=os.path.join(r'\\10.8.84.56\scan_temp\SOFTWARE','skip.csv')  # skip 项目
+        # skipfile=os.path.join(r'C:\Users\zhiquan.ye\Desktop\临时','skip.csv')  # skip 项目
+        file = open(skipfile, mode='r', encoding='gbk')
+        skip_recipe=file.read().strip()
+        file.close()
+        skip_list = skip_recipe.split('\n')
+        for skip_item in skip_list:
+            lllist =skip_item.split(',')
+            if recipe_name == lllist[1].strip() and computer_name1 == lllist[0].strip():
+                x = 2
+                while x < len(lllist) :
+                    l = Nstr(lllist[x])
+                    m = Nstr(fail_item_guidao)
+                    fail_item_guidao = m-l
+                    print('fail_item_guidao',fail_item_guidao)
+                    x=x+1
+    skip_alert() #依本地skip文件忽略报警
+    if len(fail_item_guidao) > 1 and recipe_name != 'NO_CMP': #报警信息写入文件A
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat(fail_item_guidao)
+        alert_message(fail_item_guidao)
+    if len(fail_item12) > 1 and recipe_name != 'NO_CMP': #报警信息写入文件A
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat(fail_item12)
+        if '检测颗数设定异常' in fail_item12:
+            send_mail(fail_item12)
+        alert_message(fail_item12,'server','local')
+        # tanchuan(fail_item12,log_name4,'run_check',recipe_name)
+        
+    if len(fail_item23) > 1 and recipe_name != 'NO_CMP': #报警信息写入文件A
+        log = creat_log_name('run_check')
+        log_name4 = os.path.join(log_name3,log)
+        datfile_creat(('local/server档案不一致: '+fail_item23+'修改前:'+server_left+'-->'+'修改后:'+local_right).replace('\n',' '))
+        alert_message(fail_item23,server_left,local_right)
+
+if __name__ == '__main__':
+    
+    try :
+        # time.sleep(1)
+        # flag = os.listdir(r'\\Nas-temp-sf\bepe_sys_dir\OPEN-LOT\recipe_search')
+        # flag_STI = os.listdir(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\OPEN-LOT\recipe_search')
+        # if flag:
+        #     verify_server_local()
+        # if flag_STI:
+            verify_server_local()
+    except Exception :
+        tt=str(datetime.date.today()) #取当日日期
+        csv_log = 'debug'+tt[2:4]+tt[5:7]+tt[8:10]+'.csv' #log文件名
+        debug_log = os.path.join(r'D:\donot_delete\log',csv_log)
+        print(traceback.format_exc())
+        with open(debug_log,'a',newline='', encoding='utf-8')as file:
+            writer = csv.writer(file)
+            writer.writerow(['异常崩溃原因：',traceback.format_exc().split('\n')[-5],str(datetime.datetime.now())])
+            writer.writerow(['异常崩溃原因：',traceback.format_exc().split('\n')[-4],str(datetime.datetime.now())])
+            writer.writerow(['异常崩溃原因：',traceback.format_exc().split('\n')[-3],str(datetime.datetime.now())])
+            writer.writerow(['异常崩溃原因：',traceback.format_exc().split('\n')[-2],str(datetime.datetime.now())])
