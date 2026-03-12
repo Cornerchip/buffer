@@ -1,0 +1,155 @@
+import threading
+import traceback
+import datetime
+import os
+import time
+import logging
+import socket
+
+from flask import Flask, request, jsonify
+from verify_core import verify_server_local  # 你的检测逻辑
+
+# =========================
+# 初始化
+# =========================
+
+app = Flask(__name__)
+
+running = False
+last_result = None
+last_message = ""
+last_run_time = None
+
+task_lock = threading.Lock()
+
+TASK_TIMEOUT = 600  # 秒
+
+# 获取主机名
+hostname = socket.gethostname()
+
+
+# =========================
+# 日志系统
+# =========================
+def init_log():
+    if not os.path.exists("log"):
+        os.makedirs("log")
+    logname = datetime.datetime.now().strftime("%Y%m%d") + ".log"
+    logging.basicConfig(
+        filename=os.path.join("log", logname),
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+
+# =========================
+# 任务执行
+# =========================
+def run_task():
+    global running
+    global last_result
+    global last_message
+    global last_run_time
+
+    with task_lock:
+        running = True
+        last_run_time = str(datetime.datetime.now())
+        logging.info("task start")
+
+        try:
+            start_time = time.time()
+
+            result, message = verify_server_local()
+
+            elapsed = time.time() - start_time
+            if elapsed > TASK_TIMEOUT:
+                last_result = False
+                last_message = "task timeout"
+                logging.error("task timeout")
+            else:
+                last_result = result
+                last_message = message
+                logging.info("task result: %s", result)
+
+        except Exception:
+            last_result = False
+            last_message = traceback.format_exc()
+            logging.error(last_message)
+
+        finally:
+            running = False
+
+
+# =========================
+# API
+# =========================
+
+@app.route("/ping")
+def ping():
+    return {"status": "ok", "host": hostname}
+
+
+@app.route("/status")
+def status():
+    return {
+        "running": running,
+        "last_result": last_result,
+        "last_message": last_message,
+        "last_run_time": last_run_time,
+        "host": hostname
+    }
+
+
+@app.route("/run", methods=["POST"])
+def run():
+    global running
+
+    if running:
+        return jsonify({
+            "result": False,
+            "message": "task already running",
+            "host": hostname
+        })
+
+    data = request.get_json()
+    device = data.get("device")
+    mode = data.get("mode")
+    messageid = data.get("messageid")
+
+    logging.info("receive run request %s %s %s", device, mode, messageid)
+
+    # 使用线程执行任务，避免阻塞 Flask
+    t = threading.Thread(target=run_task)
+    t.daemon = True
+    t.start()
+
+    return jsonify({
+        "device": device,
+        "mode": mode,
+        "messageid": messageid,
+        "result": True,
+        "message": "task started",
+        "host": hostname
+    })
+
+
+# =========================
+# 主程序
+# =========================
+if __name__ == "__main__":
+    init_log()
+    logging.info("AOI SERVICE START")
+    print("AOI CHECK SERVICE START")
+    print("API: http://127.0.0.1:5000")
+
+    # Flask 在单线程里运行，使用子线程处理任务
+    def flask_thread():
+        app.run(host="0.0.0.0", port=5000, threaded=True, debug=False)
+
+    t = threading.Thread(target=flask_thread)
+    t.daemon = True
+    t.start()
+
+    # 主线程阻塞，防止 exe 退出
+    while True:
+        time.sleep(60)
