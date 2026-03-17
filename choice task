@@ -1,4 +1,4 @@
-@app.route("/run", methods=["POST"])
+
 def run():
     global running
 
@@ -10,22 +10,24 @@ def run():
         })
 
     data = request.get_json()
-    device = data.get("device")
-    last_run_time = str(datetime.datetime.now())
+    if not data:
+        return jsonify({
+            "result": False,
+            "message": "invalid JSON",
+            "host": hostname
+        })
 
-    logging.info("receive run request: %s", data)
+    logging.info("Received /run request: %s", data)
 
-    # 判断调用哪一个任务
+    # 判断任务类型
     if "mode" in data:
-        # JSON1，触发任务A
         task_func = run_task_A
     elif "alarm" in data:
-        # JSON2，触发任务B
         task_func = run_task_B
     else:
         return jsonify({
             "result": False,
-            "message": "Unknown JSON format",
+            "message": "unknown JSON format",
             "host": hostname
         })
 
@@ -34,9 +36,7 @@ def run():
     t.daemon = True
     t.start()
 
-    return jsonify({
-        "device": device,
-        "result": True,
-        "message": "task started",
-        "host": hostname
-    })
+    # 返回原 JSON，加上 result 字段
+    response = data.copy()  # 避免修改原数据
+    response["result"] = True
+    return jsonify(response)
