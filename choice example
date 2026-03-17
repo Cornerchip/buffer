@@ -17,7 +17,6 @@ def run_task_A():
         finally:
             running = False
 
-
 def run_task_B():
     global running, last_result, last_message, last_run_time
     with task_lock:
