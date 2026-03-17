@@ -1,42 +1,32 @@
 
 def run():
-    global running
-
-    if running:
-        return jsonify({
-            "result": False,
-            "message": "task already running",
-            "host": hostname
-        })
-
     data = request.get_json()
     if not data:
-        return jsonify({
-            "result": False,
-            "message": "invalid JSON",
-            "host": hostname
-        })
+        return jsonify({"result": False, "message": "invalid JSON"})
 
     logging.info("Received /run request: %s", data)
 
     # 判断任务类型
     if "mode" in data:
-        task_func = run_task_A
+        # JSON1 -> 触发任务A
+        try:
+            result, message = verify_core.verify_server_local()
+        except Exception as e:
+            result = False
+            message = str(e)
     elif "alarm" in data:
-        task_func = run_task_B
+        # JSON2 -> 触发任务B
+        try:
+            result, message = verify_core.verify_server_local_type2()
+        except Exception as e:
+            result = False
+            message = str(e)
     else:
-        return jsonify({
-            "result": False,
-            "message": "unknown JSON format",
-            "host": hostname
-        })
+        return jsonify({"result": False, "message": "unknown JSON format"})
 
-    # 异步执行任务
-    t = threading.Thread(target=task_func)
-    t.daemon = True
-    t.start()
-
-    # 返回原 JSON，加上 result 字段
-    response = data.copy()  # 避免修改原数据
-    response["result"] = True
+    # 返回原 JSON，并加 result 字段
+    response = data.copy()
+    response["result"] = result  # 这里 result 来自 verify_core
+    if not result:
+        response["message"] = message  # 失败时返回 message
     return jsonify(response)
