@@ -1,0 +1,38 @@
+def run_task_A():
+    global running, last_result, last_message, last_run_time
+    with task_lock:
+        running = True
+        last_run_time = str(datetime.datetime.now())
+        logging.info("Task A start")
+        try:
+            # 调用 verify_core 的逻辑 A
+            result, message = verify_core.verify_server_local()
+            last_result = result
+            last_message = message
+            logging.info("Task A result: %s", result)
+        except Exception as e:
+            last_result = False
+            last_message = str(e)
+            logging.error("Task A exception: %s", e)
+        finally:
+            running = False
+
+
+def run_task_B():
+    global running, last_result, last_message, last_run_time
+    with task_lock:
+        running = True
+        last_run_time = str(datetime.datetime.now())
+        logging.info("Task B start")
+        try:
+            # 调用 verify_core 的逻辑 B
+            result, message = verify_core.verify_server_local_type2()
+            last_result = result
+            last_message = message
+            logging.info("Task B result: %s", result)
+        except Exception as e:
+            last_result = False
+            last_message = str(e)
+            logging.error("Task B exception: %s", e)
+        finally:
+            running = False
