@@ -1,30 +1,22 @@
+
 import threading
-import traceback
 import datetime
-import os
 import time
+import os
 import logging
 import socket
-
 from flask import Flask, request, jsonify
-from verify_core import verify_server_local  # 你的检测逻辑
+import verify_core  # 你的核心逻辑
 
 # =========================
 # 初始化
 # =========================
-
 app = Flask(__name__)
-
+task_lock = threading.Lock()
 running = False
 last_result = None
 last_message = ""
 last_run_time = None
-
-task_lock = threading.Lock()
-
-TASK_TIMEOUT = 600  # 秒
-
-# 获取主机名
 hostname = socket.gethostname()
 
 
@@ -43,45 +35,7 @@ def init_log():
 
 
 # =========================
-# 任务执行
-# =========================
-def run_task():
-    global running
-    global last_result
-    global last_message
-    global last_run_time
-
-    with task_lock:
-        running = True
-        last_run_time = str(datetime.datetime.now())
-        logging.info("task start")
-
-        try:
-            start_time = time.time()
-
-            result, message = verify_server_local()
-
-            elapsed = time.time() - start_time
-            if elapsed > TASK_TIMEOUT:
-                last_result = False
-                last_message = "task timeout"
-                logging.error("task timeout")
-            else:
-                last_result = result
-                last_message = message
-                logging.info("task result: %s", result)
-
-        except Exception:
-            last_result = False
-            last_message = traceback.format_exc()
-            logging.error(last_message)
-
-        finally:
-            running = False
-
-
-# =========================
-# API
+# API接口
 # =========================
 
 @app.route("/ping")
@@ -102,35 +56,58 @@ def status():
 
 @app.route("/run", methods=["POST"])
 def run():
-    global running
+    global running, last_result, last_message, last_run_time
 
     if running:
-        return jsonify({
-            "result": False,
-            "message": "task already running",
-            "host": hostname
-        })
+        return jsonify({"result": False, "message": "task already running", "host": hostname})
 
     data = request.get_json()
-    device = data.get("device")
-    mode = data.get("mode")
-    messageid = data.get("messageid")
+    if not data:
+        return jsonify({"result": False, "message": "invalid JSON"})
 
-    logging.info("receive run request %s %s %s", device, mode, messageid)
+    logging.info("Received /run request: %s", data)
 
-    # 使用线程执行任务，避免阻塞 Flask
-    t = threading.Thread(target=run_task)
-    t.daemon = True
-    t.start()
+    # ======================
+    # 根据 JSON 字段判断调用任务
+    # ======================
+    with task_lock:
+        running = True
+        last_run_time = str(datetime.datetime.now())
 
-    return jsonify({
-        "device": device,
-        "mode": mode,
-        "messageid": messageid,
-        "result": True,
-        "message": "task started",
-        "host": hostname
-    })
+        try:
+            # JSON1 示例 {"device":"1","mode":"3"}
+            if "mode" in data:
+                result, message = verify_core.verify_server_local()
+            # JSON2 示例 {"device":"2","alarm":"4"}
+            elif "alarm" in data:
+                result, message = verify_core.verify_server_local_type2()
+            else:
+                running = False
+                return jsonify({"result": False, "message": "unknown JSON format", "host": hostname})
+
+            # 返回原 JSON 并加 result
+            response = data.copy()
+            response["result"] = result
+            if not result:
+                response["message"] = message
+
+            last_result = result
+            last_message = message
+
+        except Exception as e:
+            result = False
+            message = str(e)
+            last_result = result
+            last_message = message
+            response = data.copy()
+            response["result"] = result
+            response["message"] = message
+            logging.error("Exception in task: %s", e)
+
+        finally:
+            running = False
+
+    return jsonify(response)
 
 
 # =========================
@@ -139,10 +116,10 @@ def run():
 if __name__ == "__main__":
     init_log()
     logging.info("AOI SERVICE START")
-    print("AOI CHECK SERVICE START")
-    print("API: http://127.0.0.1:5000")
+    print("AOI SERVICE START")
+    print("API: http://0.0.0.0:5000")
 
-    # Flask 在单线程里运行，使用子线程处理任务
+    # Flask在子线程运行
     def flask_thread():
         app.run(host="0.0.0.0", port=5000, threaded=True, debug=False)
 
@@ -150,6 +127,6 @@ if __name__ == "__main__":
     t.daemon = True
     t.start()
 
-    # 主线程阻塞，防止 exe 退出
+    # 主线程阻塞，保持exe长期运行
     while True:
         time.sleep(60)
